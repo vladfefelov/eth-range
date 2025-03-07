@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Краткосрочный прогноз диапазона для грид‑бота (Ethereum)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -11,13 +11,14 @@
       #range { margin-top: 20px; font-size: 18px; }
       #chart-container { width: 100%; min-height: 300px; }
       canvas { width: 100% !important; height: 300px !important; }
+      #gridInfo { margin-top: 10px; font-size: 16px; }
   </style>
 </head>
 <body>
-
   <h1>Краткосрочный прогноз диапазона для грид‑бота (Ethereum)</h1>
   <button onclick="getPriceRange()">Обновить данные</button>
   <p id="range">Нажмите кнопку для обновления.</p>
+  <p id="gridInfo"></p>
   <div id="chart-container">
       <canvas id="priceChart"></canvas>
   </div>
@@ -53,7 +54,6 @@
 
           // 2. ATR (расчёт для последних 10 дней)
           let atrValues = [];
-          // Вычисляем ATR для тех периодов, где есть данные за последние 10 дней
           for (let i = closingPrices.length - recentData.length + 1; i < closingPrices.length; i++) {
               atrValues.push(Math.abs(closingPrices[i] - closingPrices[i - 1]));
           }
@@ -65,17 +65,28 @@
           let support = Math.min(...recentData);
           let resistance = Math.max(...recentData);
 
-          // Итоговый диапазон – берем медиану из значений каждого метода для нижней и верхней границы
+          // Итоговый диапазон – медиана из значений каждого метода для нижней и верхней границы
           let finalLower = median(lowerBand, atrLower, support);
           let finalUpper = median(upperBand, atrUpper, resistance);
 
-          document.getElementById("range").innerText = `Диапазон: ${finalLower.toFixed(2)} - ${finalUpper.toFixed(2)} USDT`;
+          document.getElementById("range").innerText = 
+              `Диапазон: ${finalLower.toFixed(2)} - ${finalUpper.toFixed(2)} USDT`;
 
-          // Для графика отображаем только последние 3 дня, чтобы лучше видеть краткосрочные изменения
+          // Расчёт параметров для грид‑бота:
+          // Для максимального количества сеток (цель: 50-70 тыс сделок за пару дней) предлагается очень мелкий шаг.
+          // Здесь выбираем количество сеток равным 1000, то есть шаг = (finalUpper - finalLower) / 1000.
+          let finalRange = finalUpper - finalLower;
+          let targetGridCount = 1000; // можно корректировать для достижения нужной частоты сделок
+          let gridStep = finalRange / targetGridCount;
+          
+          document.getElementById("gridInfo").innerText = 
+              `Предлагаемое количество сеток: ${targetGridCount}, Шаг сетки: ${gridStep.toFixed(4)} USDT`;
+
+          // Для графика отображаются только последние 3 дня
           const chartLimit = 3;
           let chartDates = dates.slice(-chartLimit);
           let chartPrices = closingPrices.slice(-chartLimit);
-          // Для линий диапазона заполняем массивы значениями диапазона для последних 3 дней
+          // Линии диапазона для последних 3 дней
           let rangeLowerArray = Array(chartLimit).fill(finalLower.toFixed(2));
           let rangeUpperArray = Array(chartLimit).fill(finalUpper.toFixed(2));
 
@@ -83,6 +94,7 @@
 
       } catch (error) {
           document.getElementById("range").innerText = "Ошибка при получении данных.";
+          document.getElementById("gridInfo").innerText = "";
       }
     }
 
