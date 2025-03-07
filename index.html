@@ -3,61 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Диапазон Ethereum</title>
+    <title>Анализ Ethereum</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 10px; }
         #range { margin-top: 20px; font-size: 18px; }
+        canvas { max-width: 100%; }
     </style>
 </head>
 <body>
 
-    <h1>Прогнозируемый диапазон Ethereum</h1>
-    <button onclick="getPriceRange()">Обновить диапазон</button>
-    <p id="range">Нажмите кнопку, чтобы узнать диапазон.</p>
+    <h1>Анализ Ethereum</h1>
+    <button onclick="getPriceRange()">Обновить данные</button>
+    <p id="range">Нажмите кнопку для обновления.</p>
+    <canvas id="priceChart"></canvas>
 
     <script>
+        let chart;
+
         async function getPriceRange() {
             try {
-                // Получаем данные за последние 20 дней (для расчёта Bollinger Bands)
-                const response = await fetch("https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d&limit=20");
+                const response = await fetch("https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d&limit=50");
                 const data = await response.json();
 
                 let closingPrices = data.map(item => parseFloat(item[4])); // Цены закрытия
-                let currentPrice = closingPrices[closingPrices.length - 1]; // Последняя цена
+                let dates = data.map(item => new Date(item[0]).toLocaleDateString());
 
-                // Вычисляем SMA (Simple Moving Average)
-                let sma = closingPrices.reduce((sum, price) => sum + price, 0) / closingPrices.length;
+                let currentPrice = closingPrices[closingPrices.length - 1]; // Текущая цена
+
+                // Вычисляем SMA (20-дневную скользящую среднюю)
+                let sma = closingPrices.slice(-20).reduce((sum, price) => sum + price, 0) / 20;
 
                 // Вычисляем стандартное отклонение
-                let variance = closingPrices.reduce((sum, price) => sum + Math.pow(price - sma, 2), 0) / closingPrices.length;
+                let variance = closingPrices.slice(-20).reduce((sum, price) => sum + Math.pow(price - sma, 2), 0) / 20;
                 let stdDev = Math.sqrt(variance);
 
                 // Bollinger Bands
                 let upperBand = (sma + 2 * stdDev).toFixed(2);
                 let lowerBand = (sma - 2 * stdDev).toFixed(2);
 
-                // Вычисляем ATR (Average True Range)
+                // ATR (волатильность)
                 let atrValues = [];
                 for (let i = 1; i < closingPrices.length; i++) {
-                    let tr = Math.abs(closingPrices[i] - closingPrices[i - 1]);
-                    atrValues.push(tr);
+                    atrValues.push(Math.abs(closingPrices[i] - closingPrices[i - 1]));
                 }
-                let atr = atrValues.reduce((sum, value) => sum + value, 0) / atrValues.length;
-
-                // Диапазон на основе ATR
+                let atr = atrValues.slice(-20).reduce((sum, val) => sum + val, 0) / 20;
                 let atrLower = (currentPrice - atr).toFixed(2);
                 let atrUpper = (currentPrice + atr).toFixed(2);
 
-                // Финальный диапазон = пересечение Bollinger Bands и ATR
-                let finalLower = Math.max(lowerBand, atrLower);
-                let finalUpper = Math.min(upperBand, atrUpper);
+                // Определяем уровни поддержки и сопротивления
+                let support = Math.min(...closingPrices.slice(-20)).toFixed(2);
+                let resistance = Math.max(...closingPrices.slice(-20)).toFixed(2);
 
-                document.getElementById("range").innerText = `Ожидаемый диапазон: ${finalLower} - ${finalUpper} USDT`;
+                // Итоговый диапазон
+                let finalLower = Math.max(lowerBand, atrLower, support);
+                let finalUpper = Math.min(upperBand, atrUpper, resistance);
+
+                document.getElementById("range").innerText = `Диапазон: ${finalLower} - ${finalUpper} USDT`;
+
+                drawChart(dates, closingPrices, finalLower, finalUpper);
 
             } catch (error) {
                 document.getElementById("range").innerText = "Ошибка при получении данных.";
             }
+        }
+
+        function drawChart(dates, prices, lower, upper) {
+            if (chart) chart.destroy();
+
+            let ctx = document.getElementById('priceChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Цена закрытия (ETH)',
+                            data: prices,
+                            borderColor: 'blue',
+                            fill: false
+                        },
+                        {
+                            label: 'Верхняя граница диапазона',
+                            data: Array(prices.length).fill(upper),
+                            borderColor: 'red',
+                            borderDash: [5, 5],
+                            fill: false
+                        },
+                        {
+                            label: 'Нижняя граница диапазона',
+                            data: Array(prices.length).fill(lower),
+                            borderColor: 'green',
+                            borderDash: [5, 5],
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: 'Дата' } },
+                        y: { title: { display: true, text: 'Цена (USDT)' } }
+                    }
+                }
+            });
         }
     </script>
 
