@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ценовой диапазон Ethereum</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        #range { margin-top: 20px; font-size: 18px; }
+    </style>
+</head>
+<body>
+
+    <h1>Определение ценового диапазона Ethereum</h1>
+    <button onclick="getPriceRange()">Обновить диапазон</button>
+    <p id="range">Нажмите кнопку, чтобы узнать диапазон.</p>
+
+    <script>
+        async function getPriceRange() {
+            try {
+                const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT");
+                const data = await response.json();
+                const price = parseFloat(data.price);
+                
+                const lower = (price * 0.98).toFixed(2);
+                const upper = (price * 1.02).toFixed(2);
+
+                document.getElementById("range").innerText = `Примерный диапазон: ${lower} - ${upper} USDT`;
+            } catch (error) {
+                document.getElementById("range").innerText = "Ошибка при получении данных.";
+            }
+        }
+    </script>
+
+</body>
+</html>
