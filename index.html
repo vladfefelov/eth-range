@@ -55,17 +55,21 @@
         const data = await response.json();
         if (!Array.isArray(data)) throw new Error("Некорректный ответ API");
 
+        // Извлекаем цены закрытия и временные метки
         const prices = data.map(item => parseFloat(item[4]));
         const times = data.map(item => new Date(item[6]).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
 
         const currentPrice = prices[prices.length - 1];
 
+        // Расчет простой скользящей средней (SMA)
         const sma = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+        // Расчет стандартного отклонения для Bollinger Bands
         const variance = prices.reduce((sum, p) => sum + Math.pow(p - sma, 2), 0) / prices.length;
         const stdDev = Math.sqrt(variance);
         const bbLower = sma - 2 * stdDev;
         const bbUpper = sma + 2 * stdDev;
 
+        // Расчет ATR
         let atrValues = [];
         for (let i = 1; i < prices.length; i++) {
           atrValues.push(Math.abs(prices[i] - prices[i - 1]));
@@ -74,18 +78,20 @@
         const atrLower = currentPrice - atr;
         const atrUpper = currentPrice + atr;
 
+        // Находим экстремумы (поддержку и сопротивление)
         const support = Math.min(...prices);
         const resistance = Math.max(...prices);
 
+        // Функция для вычисления медианы из трех чисел
         function median(a, b, c) {
           return a + b + c - Math.min(a, b, c) - Math.max(a, b, c);
         }
         let finalLower = median(bbLower, atrLower, support);
         let finalUpper = median(bbUpper, atrUpper, resistance);
 
+        // Корректировка диапазона с учетом ликвидационных цен
         const liqLong = currentPrice * (1 - 1 / leverage);
         const liqShort = currentPrice * (1 + 1 / leverage);
-
         if (finalLower < liqLong) {
           finalLower = liqLong * 1.02;
         }
@@ -97,20 +103,32 @@
           finalUpper = currentPrice * 1.05;
         }
 
+        // Расчет шага сетки
         const rangeWidth = finalUpper - finalLower;
         const gridStep = rangeWidth / maxGrids;
 
+        // Дополнительные расчеты для тейк-профита и стоп-лосса
+        // Если цена выходит за диапазон на величину, равную ATR, можно считать, что тренд начался.
+        const tpMultiplier = 1; // коэффициент для тейк-профита
+        const slMultiplier = 1; // коэффициент для стоп-лосса
+        const takeProfit = finalUpper + (atr * tpMultiplier);
+        const stopLoss = finalLower - (atr * slMultiplier);
+
+        // Выводим результаты
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
           <b>Диапазон:</b> ${finalLower.toFixed(2)} - ${finalUpper.toFixed(2)} USDT<br>
           <b>Шаг сетки:</b> ${gridStep.toFixed(4)} USDT<br>
           <b>Ликвидация (лонг):</b> ${liqLong.toFixed(2)} USDT, 
-          <b>Ликвидация (шорт):</b> ${liqShort.toFixed(2)} USDT
+          <b>Ликвидация (шорт):</b> ${liqShort.toFixed(2)} USDT<br>
+          <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
+          <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT
         `;
 
+        // Обновляем график, добавляя линии для стоп-лосса и тейк-профита
         const chartPrices = prices.slice(-chartLimit);
         const chartTimes = times.slice(-chartLimit);
-        drawChart(chartTimes, chartPrices, finalLower, finalUpper);
+        drawChart(chartTimes, chartPrices, finalLower, finalUpper, stopLoss, takeProfit);
 
       } catch (error) {
         console.error(error);
@@ -118,7 +136,7 @@
       }
     }
 
-    function drawChart(labels, prices, lowerBound, upperBound) {
+    function drawChart(labels, prices, lowerBound, upperBound, stopLoss, takeProfit) {
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
 
@@ -141,6 +159,20 @@
           label: "Верхний диапазон",
           data: Array(prices.length).fill(upperBound),
           borderColor: "red",
+          borderWidth: 1,
+          borderDash: [5, 5]
+        },
+        {
+          label: "Стоп-лосс",
+          data: Array(prices.length).fill(stopLoss),
+          borderColor: "orange",
+          borderWidth: 1,
+          borderDash: [5, 5]
+        },
+        {
+          label: "Тейк-профит",
+          data: Array(prices.length).fill(takeProfit),
+          borderColor: "purple",
           borderWidth: 1,
           borderDash: [5, 5]
         }
