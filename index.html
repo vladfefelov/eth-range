@@ -33,15 +33,15 @@
     #result {
       font-size: 16px;
       margin-bottom: 10px;
+      text-align: left;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
     }
   </style>
 </head>
 <body>
   <h1>Расчет диапазона для грид‑бота (ETH/USDT)</h1>
-  <label><input type="radio" name="mode" value="neutral" checked> Нейтральный</label>
-  <label><input type="radio" name="mode" value="long"> Лонг</label>
-  <label><input type="radio" name="mode" value="short"> Шорт</label>
-  <br>
   <button onclick="calculateRange()">Рассчитать</button>
   <p id="result"></p>
   <div id="chart-container">
@@ -49,60 +49,122 @@
   </div>
 
   <script>
+    // Расчет экспоненциальной скользящей средней (EMA)
+    function calcEMA(prices, period) {
+      const k = 2 / (period + 1);
+      let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      for (let i = period; i < prices.length; i++) {
+        ema = prices[i] * k + ema * (1 - k);
+      }
+      return ema;
+    }
+
+    // Расчет RSI с экспоненциальным сглаживанием
+    function calcRSI(prices, period = 14) {
+      let gains = 0, losses = 0;
+      for (let i = 1; i <= period; i++) {
+        let diff = prices[i] - prices[i - 1];
+        if(diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      let avgGain = gains / period;
+      let avgLoss = losses / period;
+      for (let i = period + 1; i < prices.length; i++) {
+        let diff = prices[i] - prices[i - 1];
+        avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+      }
+      if(avgLoss === 0) return 100;
+      let rs = avgGain / avgLoss;
+      return 100 - (100 / (1 + rs));
+    }
+
+    // Упрощенный расчет MACD (для демонстрации)
+    function calcMACD(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
+      const emaShort = calcEMA(prices, shortPeriod);
+      const emaLong = calcEMA(prices, longPeriod);
+      const macdLine = emaShort - emaLong;
+      // Для упрощения сигнальная линия берется равной macdLine (в полноценном расчете следует вычислить EMA серии MACD)
+      const signalLine = macdLine;
+      return { macd: macdLine, signal: signalLine };
+    }
+
     async function calculateRange() {
       const symbol = "ETHUSDT";
       const interval = "1h";
       const limit = 100;
-      const modeUser = document.querySelector('input[name="mode"]:checked').value;
 
       try {
         const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
         const data = await response.json();
         if (!Array.isArray(data)) throw new Error("Ошибка API");
 
+        // Получаем цены, максимумы, минимумы и временные метки
         const prices = data.map(item => parseFloat(item[4]));
         const highs = data.map(item => parseFloat(item[2]));
         const lows = data.map(item => parseFloat(item[3]));
-        const closes = prices;
-        const timestamps = data.map(item => new Date(item[0])); // Временные метки
+        const timestamps = data.map(item => new Date(item[0]));
 
         const currentPrice = prices[prices.length - 1];
         const support = Math.min(...lows.slice(-20));
         const resistance = Math.max(...highs.slice(-20));
 
-        let lowerBound, upperBound;
-        if (modeUser === "neutral") {
-          lowerBound = support;
-          upperBound = resistance;
-        } else if (modeUser === "long") {
-          lowerBound = currentPrice * 0.97;
-          upperBound = resistance;
-        } else {
-          lowerBound = support;
-          upperBound = currentPrice * 1.03;
+        // Вычисляем индикаторы
+        const rsi = calcRSI(prices);
+        const macd = calcMACD(prices);
+
+        // Определяем рекомендацию по направлению сделки
+        let recommendation = "Нейтральный";
+        if(rsi > 65 && macd.macd > macd.signal) {
+          recommendation = "Лонг";
+        } else if(rsi < 35 && macd.macd < macd.signal) {
+          recommendation = "Шорт";
         }
 
-        const takeProfit = upperBound * 1.01;
-        const stopLoss = lowerBound * 0.99;
+        // Рекомендации по риск-менеджменту с двумя стратегиями
+        let riskAdvice = "";
+        if(recommendation === "Лонг") {
+          let sl_percent_price = currentPrice * 0.992; // ~0.8% ниже цены
+          let tp_percent_price = currentPrice * 1.016; // ~1.6% выше цены
+          riskAdvice = `Рекомендуется открывать Лонг.<br>
+          <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${sl_percent_price.toFixed(2)} USDT (≈ -0.8%), Тейк-профит на ${tp_percent_price.toFixed(2)} USDT (≈ +1.6%).<br>
+          <b>Стратегия 2 (ценовая):</b> Используйте уровень поддержки (${support.toFixed(2)} USDT) как стоп-лосс и уровень сопротивления (${resistance.toFixed(2)} USDT) как тейк-профит.`;
+        } else if(recommendation === "Шорт") {
+          let sl_percent_price = currentPrice * 1.008; // ~0.8% выше цены
+          let tp_percent_price = currentPrice * 0.984; // ~1.6% ниже цены
+          riskAdvice = `Рекомендуется открывать Шорт.<br>
+          <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${sl_percent_price.toFixed(2)} USDT (≈ +0.8%), Тейк-профит на ${tp_percent_price.toFixed(2)} USDT (≈ -1.6%).<br>
+          <b>Стратегия 2 (ценовая):</b> Используйте уровень сопротивления (${resistance.toFixed(2)} USDT) как стоп-лосс и уровень поддержки (${support.toFixed(2)} USDT) как тейк-профит.`;
+        } else {
+          riskAdvice = "Рынок нейтральный, рекомендуется дождаться более явных сигналов для входа.";
+        }
 
+        // Вычисляем стандартные уровни (на основе поддержки/сопротивления)
+        const takeProfit = resistance * 1.01;
+        const stopLoss = support * 0.99;
+
+        // Выводим результаты и рекомендации
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
-          <b>Диапазон:</b> ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)} USDT<br>
-          <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
-          <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT
+          <b>Диапазон (поддержка/сопротивление):</b> ${support.toFixed(2)} - ${resistance.toFixed(2)} USDT<br>
+          <b>RSI:</b> ${rsi.toFixed(2)}<br>
+          <b>MACD:</b> ${macd.macd.toFixed(4)} (Signal: ${macd.signal.toFixed(4)})<br>
+          <b>Рекомендуемый режим:</b> ${recommendation}<br>
+          <b>Стандартные уровни:</b> Тейк-профит на ${takeProfit.toFixed(2)} USDT, Стоп-лосс на ${stopLoss.toFixed(2)} USDT<br>
+          <br><b>Рекомендации по риск-менеджменту:</b><br>${riskAdvice}
         `;
 
         drawChart(prices, timestamps, support, resistance);
-
       } catch (error) {
         console.error(error);
         document.getElementById("result").innerText = "Ошибка загрузки данных.";
       }
     }
 
+    // Функция построения графика с временной осью и чистыми линиями
     function drawChart(prices, timestamps, support, resistance) {
       const ctx = document.getElementById("priceChart").getContext("2d");
-      if (window.myChart) window.myChart.destroy();
+      if(window.myChart) window.myChart.destroy();
       
       window.myChart = new Chart(ctx, {
         type: "line",
@@ -115,7 +177,7 @@
               borderColor: "blue",
               borderWidth: 2,
               fill: false,
-              pointRadius: 0 // Убираем точки
+              pointRadius: 0
             },
             {
               label: "Поддержка",
@@ -143,36 +205,19 @@
               type: "time",
               time: {
                 unit: "hour",
-                tooltipFormat: "yyyy-MM-dd HH:mm"
+                displayFormats: { hour: "dd.MM HH:mm" }
               },
-              ticks: {
-                autoSkip: true,
-                maxTicksLimit: 10
-              },
-              title: {
-                display: true,
-                text: "Время"
-              }
+              ticks: { autoSkip: true, maxTicksLimit: 10 },
+              title: { display: true, text: "Время (дд.ММ чч:мм)" }
             },
             y: {
-              title: {
-                display: true,
-                text: "Цена (USDT)"
-              },
-              ticks: {
-                callback: (value) => value.toFixed(2) + " USDT"
-              }
+              title: { display: true, text: "Цена (USDT)" },
+              ticks: { callback: (value) => value.toFixed(2) + " USDT" }
             }
           },
           plugins: {
-            legend: {
-              display: true,
-              position: "top"
-            },
-            tooltip: {
-              mode: "index",
-              intersect: false
-            }
+            legend: { display: true, position: "top" },
+            tooltip: { mode: "index", intersect: false }
           }
         }
       });
