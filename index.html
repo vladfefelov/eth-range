@@ -49,17 +49,17 @@
   </div>
 
   <script>
-    // Расчет EMA (экспоненциальная скользящая средняя) для всей серии
+    // Расчет EMA (экспоненциальная скользящая средняя)
     function calcEMA(prices, period) {
       const k = 2 / (period + 1);
-      let ema = [prices[0]]; // Начальное значение - первая цена
+      let ema = [prices[0]];
       for (let i = 1; i < prices.length; i++) {
         ema.push(prices[i] * k + ema[i - 1] * (1 - k));
       }
       return ema;
     }
 
-    // Расчет MACD (схождение/расхождение скользящих средних)
+    // Расчет MACD
     function calcMACD(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
       const emaShort = calcEMA(prices, shortPeriod);
       const emaLong = calcEMA(prices, longPeriod);
@@ -74,7 +74,7 @@
       };
     }
 
-    // Расчет RSI (индекс относительной силы) с экспоненциальным сглаживанием
+    // Расчет RSI
     function calcRSI(prices, period = 14) {
       let gains = [], losses = [];
       for (let i = 1; i < prices.length; i++) {
@@ -117,7 +117,6 @@
         const data = await response.json();
         if (!Array.isArray(data)) throw new Error("Ошибка API");
 
-        // Получаем цены, максимумы, минимумы и временные метки
         const prices = data.map(item => parseFloat(item[4]));
         const highs = data.map(item => parseFloat(item[2]));
         const lows = data.map(item => parseFloat(item[3]));
@@ -133,7 +132,7 @@
         const macd = calcMACD(prices);
         const atr = calcATR(highs, lows, closes);
 
-        // Определяем рекомендацию по направлению сделки на основе RSI и MACD
+        // Определяем рекомендацию
         let recommendation = "Нейтральный";
         if (rsi > 65 && macd.macd > macd.signal) {
           recommendation = "Лонг";
@@ -141,20 +140,20 @@
           recommendation = "Шорт";
         }
 
-        // Риск-менеджмент: три стратегии (процентная, на основе уровней и ATR)
+        // Риск-менеджмент
         let riskAdvice = "";
         let stopLoss = null, takeProfit = null, strategyUsed = "";
 
         if (recommendation === "Лонг") {
-          const riskPercentSL = 2;  // например, 2%
-          const riskPercentTP = 4;  // например, 4%
+          const riskPercentSL = 2;
+          const riskPercentTP = 4;
           const atrMultiplierSL = 1.5;
           const atrMultiplierTP = 3;
           const slFixed = currentPrice * (1 - riskPercentSL / 100);
           const tpFixed = currentPrice * (1 + riskPercentTP / 100);
           const slATR = currentPrice - (atr * atrMultiplierSL);
           const tpATR = currentPrice + (atr * atrMultiplierTP);
-          if (atr > currentPrice * 0.01) {  // если ATR > 1% от цены
+          if (atr > currentPrice * 0.01) {
             stopLoss = slATR;
             takeProfit = tpATR;
             strategyUsed = "ATR-основанная (волатильность)";
@@ -191,17 +190,29 @@
             <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
             <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
             Дополнительно: <b>Стратегия (уровни):</b> Стоп-лосс на уровне сопротивления (${resistance.toFixed(2)} USDT), Тейк-профит на уровне поддержки (${support.toFixed(2)} USDT).`;
-        } else {  // Нейтральный режим
+        } else {
           riskAdvice = `Рынок нейтральный, рекомендуется настроить грид-бота на работу в обе стороны.<br>
             Выставьте сетку ордеров вверх и вниз от текущей цены, используя уровни поддержки <b>${support.toFixed(2)} USDT</b> и сопротивления <b>${resistance.toFixed(2)} USDT</b>.<br>
             Можно также задействовать динамическое расстояние между ордерами на основе волатильности (ATR = <b>${atr.toFixed(2)}</b>).`;
         }
 
-        // Стандартные уровни (на основе поддержки/сопротивления)
         const takeProfitStandard = resistance * 1.01;
         const stopLossStandard = support * 0.99;
 
-        // Вывод результатов и рекомендаций
+        // Расчет диапазона для грид-бота
+        let gridBotRange = "";
+        if (recommendation === "Лонг") {
+          gridBotRange = `Рекомендуемый диапазон для грид-бота: <b>${stopLoss.toFixed(2)} - ${takeProfit.toFixed(2)} USDT</b> (на основе ATR)<br>
+            Альтернативный диапазон: <b>${support.toFixed(2)} - ${resistance.toFixed(2)} USDT</b> (на основе уровней)`;
+        } else if (recommendation === "Шорт") {
+          gridBotRange = `Рекомендуемый диапазон для грид-бота: <b>${takeProfit.toFixed(2)} - ${stopLoss.toFixed(2)} USDT</b> (на основе ATR)<br>
+            Альтернативный диапазон: <b>${support.toFixed(2)} - ${resistance.toFixed(2)} USDT</b> (на основе уровней)`;
+        } else {
+          gridBotRange = `Рекомендуемый диапазон для грид-бота: <b>${support.toFixed(2)} - ${resistance.toFixed(2)} USDT</b> (на основе уровней)<br>
+            Динамический диапазон: <b>${(currentPrice - atr * 2).toFixed(2)} - ${(currentPrice + atr * 2).toFixed(2)} USDT</b> (на основе ATR)`;
+        }
+
+        // Вывод результатов
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
           <b>Диапазон (поддержка/сопротивление):</b> ${support.toFixed(2)} - ${resistance.toFixed(2)} USDT<br>
@@ -210,7 +221,8 @@
           <b>ATR:</b> ${atr.toFixed(4)}<br>
           <b>Рекомендуемый режим:</b> ${recommendation}<br>
           <b>Стандартные уровни:</b> Тейк-профит на ${takeProfitStandard.toFixed(2)} USDT, Стоп-лосс на ${stopLossStandard.toFixed(2)} USDT<br>
-          <br><b>Рекомендации по риск-менеджменту:</b><br>${riskAdvice}
+          <br><b>Рекомендации по риск-менеджменту:</b><br>${riskAdvice}<br>
+          <br><b>Рекомендации для грид-бота:</b><br>${gridBotRange}
         `;
 
         drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation);
@@ -220,7 +232,7 @@
       }
     }
 
-    // Построение графика с временной осью (формат дд.MM чч:мм) и линиями без точек
+    // Построение графика
     function drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation) {
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
@@ -252,7 +264,6 @@
         }
       ];
 
-      // Добавляем линии стоп-лосса и тейк-профита только если не нейтральный режим
       if (recommendation !== "Нейтральный" && stopLoss !== null && takeProfit !== null) {
         datasets.push({
           label: "Стоп-лосс",
@@ -306,4 +317,4 @@
   </script>
 </body>
 </html>
-​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
+​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
