@@ -152,32 +152,32 @@
           upperBound = Math.min(resistance, currentPrice + atr * 0.3);
         }
 
-        // Агрессивные тейк-профит и стоп-лосс
-        let takeProfit, stopLoss;
+        // Тейк-профит и стоп-лосс только для лонга и шорта
+        let takeProfit = null;
+        let stopLoss = null;
         if (direction === "Лонг") {
           takeProfit = upperBound + atr * 1; // Тейк-профит выше верхней границы
           stopLoss = lowerBound - atr * 1;   // Стоп-лосс ниже нижней границы
         } else if (direction === "Шорт") {
           takeProfit = lowerBound - atr * 1; // Тейк-профит ниже нижней границы
           stopLoss = upperBound + atr * 1;   // Стоп-лосс выше верхней границы
-        } else {
-          takeProfit = upperBound + atr * 1; // Нейтральное направление
-          stopLoss = lowerBound - atr * 1;
-        }
-
-        // Проверка на undefined
-        if (takeProfit === undefined || stopLoss === undefined || lowerBound === undefined || upperBound === undefined) {
-          throw new Error("Ошибка расчета: не удалось определить значения для takeProfit, stopLoss, lowerBound или upperBound.");
         }
 
         // Вывод результатов
-        document.getElementById("result").innerHTML = `
+        let resultHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
           <b>Диапазон для грид-бота:</b> ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)} USDT<br>
-          <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
-          <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
           <b>Направление:</b> ${direction}<br>
         `;
+
+        if (direction !== "Нейтральный") {
+          resultHTML += `
+            <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
+            <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
+          `;
+        }
+
+        document.getElementById("result").innerHTML = resultHTML;
 
         drawChart(prices, timestamps, lowerBound, upperBound, takeProfit, stopLoss);
       } catch (error) {
@@ -215,24 +215,31 @@
           borderWidth: 1.5,
           borderDash: [5, 5],
           pointRadius: 0
-        },
-        {
+        }
+      ];
+
+      // Добавляем тейк-профит и стоп-лосс, если они определены
+      if (takeProfit !== null) {
+        datasets.push({
           label: "Тейк-профит",
           data: Array(prices.length).fill(takeProfit),
           borderColor: "purple",
           borderWidth: 1.5,
           borderDash: [5, 5],
           pointRadius: 0
-        },
-        {
+        });
+      }
+
+      if (stopLoss !== null) {
+        datasets.push({
           label: "Стоп-лосс",
           data: Array(prices.length).fill(stopLoss),
           borderColor: "orange",
           borderWidth: 1.5,
           borderDash: [5, 5],
           pointRadius: 0
-        }
-      ];
+        });
+      }
 
       window.myChart = new Chart(ctx, {
         type: "line",
