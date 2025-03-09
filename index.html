@@ -108,21 +108,31 @@
 
     // Получение списка всех торговых пар
     async function getAllSymbols() {
-      const response = await fetch("https://www.okx.com/api/v5/public/instruments?instType=SPOT");
-      const data = await response.json();
-      return data.data
-        .filter(symbol => symbol.quoteCcy === "USDT") // Фильтруем только пары с USDT
-        .map(symbol => symbol.instId);
+      try {
+        const response = await fetch("https://www.okx.com/api/v5/public/instruments?instType=SPOT");
+        const data = await response.json();
+        return data.data
+          .filter(symbol => symbol.quoteCcy === "USDT") // Фильтруем только пары с USDT
+          .map(symbol => symbol.instId);
+      } catch (error) {
+        console.error("Ошибка при загрузке списка пар:", error);
+        return [];
+      }
     }
 
     // Расчет волатильности пары
     async function calculateVolatility(symbol) {
-      const response = await fetch(`https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=1H&limit=24`);
-      const data = await response.json();
-      const prices = data.data.map(item => parseFloat(item[4])); // Цены закрытия
-      const high = Math.max(...prices);
-      const low = Math.min(...prices);
-      return high - low; // Волатильность как разница между максимумом и минимумом
+      try {
+        const response = await fetch(`https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=1H&limit=24`);
+        const data = await response.json();
+        const prices = data.data.map(item => parseFloat(item[4])); // Цены закрытия
+        const high = Math.max(...prices);
+        const low = Math.min(...prices);
+        return high - low; // Волатильность как разница между максимумом и минимумом
+      } catch (error) {
+        console.error("Ошибка при расчете волатильности:", error);
+        return 0;
+      }
     }
 
     // Поиск самой волатильной пары
@@ -145,17 +155,23 @@
     // Основная функция расчета
     async function calculateRange() {
       try {
-        // Находим самую волатильную пару
+        console.log("Поиск самой волатильной пары...");
         const symbol = await findMostVolatileSymbol();
         if (!symbol) {
           throw new Error("Не удалось найти волатильную пару.");
         }
+        console.log("Самая волатильная пара:", symbol);
 
         const interval = "5m"; // Более частый интервал
         const limit = 200; // Больше данных
 
+        console.log("Загрузка исторических данных...");
         const response = await fetch(`https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=${interval}&limit=${limit}`);
+        if (!response.ok) {
+          throw new Error(`Ошибка HTTP: ${response.status}`);
+        }
         const data = await response.json();
+        console.log("Данные получены:", data);
 
         // Проверка на ошибки в данных
         if (!Array.isArray(data.data) || data.data.length === 0) {
