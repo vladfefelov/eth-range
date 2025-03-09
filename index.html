@@ -115,7 +115,11 @@
       try {
         const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
         const data = await response.json();
-        if (!Array.isArray(data)) throw new Error("Ошибка API");
+
+        // Проверка на ошибки в данных
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error("Ошибка API: данные не загружены или пусты.");
+        }
 
         const prices = data.map(item => parseFloat(item[4]));
         const highs = data.map(item => parseFloat(item[2]));
@@ -138,26 +142,30 @@
         else if (rsi < 30 && macd.macd < macd.signal) direction = "Шорт";
 
         // Узкий диапазон для грид-бота
-        let lowerBound, upperBound;
+        let lowerBound = support; // По умолчанию используем поддержку
+        let upperBound = resistance; // По умолчанию используем сопротивление
         if (direction === "Лонг") {
           lowerBound = Math.max(support, currentPrice - atr * 0.3);
           upperBound = Math.min(resistance, currentPrice + atr * 0.6);
         } else if (direction === "Шорт") {
           lowerBound = Math.max(support, currentPrice - atr * 0.6);
           upperBound = Math.min(resistance, currentPrice + atr * 0.3);
-        } else {
-          lowerBound = support;
-          upperBound = resistance;
         }
 
         // Агрессивные тейк-профит и стоп-лосс
-        let takeProfit, stopLoss;
+        let takeProfit = currentPrice * 1.02; // По умолчанию 2% тейк-профит
+        let stopLoss = currentPrice * 0.98; // По умолчанию 2% стоп-лосс
         if (direction === "Лонг") {
           takeProfit = currentPrice * 1.02; // 2% тейк-профит
           stopLoss = currentPrice * 0.99;   // 1% стоп-лосс
         } else if (direction === "Шорт") {
           takeProfit = currentPrice * 0.98; // 2% тейк-профит
           stopLoss = currentPrice * 1.01;   // 1% стоп-лосс
+        }
+
+        // Проверка на undefined
+        if (takeProfit === undefined || stopLoss === undefined || lowerBound === undefined || upperBound === undefined) {
+          throw new Error("Ошибка расчета: не удалось определить значения для takeProfit, stopLoss, lowerBound или upperBound.");
         }
 
         // Вывод результатов
