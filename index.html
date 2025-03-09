@@ -13,13 +13,14 @@
     }
     #chart-container {
       width: 90%;
-      max-width: 800px;
-      height: 400px;
-      margin: 0 auto;
+      max-width: 900px;
+      height: 450px;
+      margin: 20px auto;
     }
     canvas {
-      width: 100% !important;
-      height: 100% !important;
+      background: #f8f8f8;
+      border: 1px solid #ccc;
+      border-radius: 8px;
     }
     button {
       padding: 10px 20px;
@@ -35,15 +36,9 @@
 </head>
 <body>
   <h1>Расчет диапазона для грид‑бота (ETH/USDT)</h1>
-  <label>
-    <input type="radio" name="mode" value="neutral" checked> Нейтральный
-  </label>
-  <label>
-    <input type="radio" name="mode" value="long"> Лонг
-  </label>
-  <label>
-    <input type="radio" name="mode" value="short"> Шорт
-  </label>
+  <label><input type="radio" name="mode" value="neutral" checked> Нейтральный</label>
+  <label><input type="radio" name="mode" value="long"> Лонг</label>
+  <label><input type="radio" name="mode" value="short"> Шорт</label>
   <br>
   <button onclick="calculateRange()">Рассчитать</button>
   <p id="result"></p>
@@ -52,50 +47,50 @@
   </div>
 
   <script>
-    // Считаем ATR (True Range)
-    function calcATR(highs, lows, closes, period = 14) {
-      let trValues = [];
-      for (let i = 1; i < highs.length; i++) {
-        let tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
-        trValues.push(tr);
+    function calcEMA(prices, period) {
+      const k = 2 / (period + 1);
+      let ema = prices.slice(0, period).reduce((a, b) => a + b) / period;
+      for (let i = period; i < prices.length; i++) {
+        ema = prices[i] * k + ema * (1 - k);
       }
-      return trValues.slice(-period).reduce((sum, v) => sum + v, 0) / period;
+      return ema;
     }
 
-    // RSI с адаптивными порогами
     function calcRSI(prices, period = 14) {
       let gains = 0, losses = 0;
-      for (let i = prices.length - period; i < prices.length; i++) {
-        const change = prices[i] - prices[i - 1];
-        if (change > 0) gains += change;
-        else losses += Math.abs(change);
+      for (let i = 1; i < period + 1; i++) {
+        let diff = prices[i] - prices[i - 1];
+        if (diff > 0) gains += diff;
+        else losses -= diff;
       }
-      const avgGain = gains / period;
-      const avgLoss = losses / period;
+      let avgGain = gains / period, avgLoss = losses / period;
+      for (let i = period + 1; i < prices.length; i++) {
+        let diff = prices[i] - prices[i - 1];
+        avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+      }
       if (avgLoss === 0) return 100;
-      const rs = avgGain / avgLoss;
+      let rs = avgGain / avgLoss;
       return 100 - (100 / (1 + rs));
     }
 
-    // MACD (основной + сигнальная линия)
     function calcMACD(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
-      const emaShort = calcEMA(prices, shortPeriod);
-      const emaLong = calcEMA(prices, longPeriod);
-      const macd = emaShort - emaLong;
-      const signal = calcEMA(prices.slice(-signalPeriod), signalPeriod);
-      return { macd, signal };
+      const macdLine = calcEMA(prices, shortPeriod) - calcEMA(prices, longPeriod);
+      const signalLine = calcEMA(prices.slice(-signalPeriod), signalPeriod);
+      return { macd: macdLine, signal: signalLine };
     }
 
-    // EMA
-    function calcEMA(prices, period) {
-      const k = 2 / (period + 1);
-      return prices.slice(-period).reduce((ema, price) => k * price + (1 - k) * ema);
+    function pivotPoints(highs, lows, closes) {
+      let pivot = (Math.max(...highs) + Math.min(...lows) + closes[closes.length - 1]) / 3;
+      let resistance = pivot + (Math.max(...highs) - Math.min(...lows));
+      let support = pivot - (Math.max(...highs) - Math.min(...lows));
+      return { pivot, support, resistance };
     }
 
     async function calculateRange() {
       const symbol = "ETHUSDT";
       const interval = "1h";
-      const limit = 100; // Скользящее окно
+      const limit = 100;
       const modeUser = document.querySelector('input[name="mode"]:checked').value;
 
       try {
@@ -109,35 +104,28 @@
         const closes = prices;
         const currentPrice = prices[prices.length - 1];
 
-        // Технические индикаторы
         const rsi = calcRSI(prices);
-        const atr = calcATR(highs, lows, closes);
         const macd = calcMACD(prices);
-
-        // Поддержка/сопротивление через локальные экстремумы
-        const support = Math.min(...lows.slice(-20));
-        const resistance = Math.max(...highs.slice(-20));
+        const pivots = pivotPoints(highs, lows, closes);
 
         let lowerBound, upperBound;
         if (modeUser === "neutral") {
-          lowerBound = support;
-          upperBound = resistance;
+          lowerBound = pivots.support;
+          upperBound = pivots.resistance;
         } else if (modeUser === "long") {
-          lowerBound = currentPrice * 0.98;
-          upperBound = resistance;
-        } else if (modeUser === "short") {
-          lowerBound = support;
-          upperBound = currentPrice * 1.02;
+          lowerBound = currentPrice * 0.97;
+          upperBound = pivots.resistance;
+        } else {
+          lowerBound = pivots.support;
+          upperBound = currentPrice * 1.03;
         }
 
-        // Динамический тейк-профит и стоп-лосс
-        const takeProfit = upperBound + atr * 1.5;
-        const stopLoss = lowerBound - atr * 1.5;
+        const takeProfit = upperBound * 1.01;
+        const stopLoss = lowerBound * 0.99;
 
-        // Выбор лучшего режима на основе RSI и MACD
         let recommendation = "Нейтральный";
-        if (rsi > 60 && macd.macd > macd.signal) recommendation = "Лонг";
-        else if (rsi < 40 && macd.macd < macd.signal) recommendation = "Шорт";
+        if (rsi > 65 && macd.macd > macd.signal) recommendation = "Лонг";
+        else if (rsi < 35 && macd.macd < macd.signal) recommendation = "Шорт";
 
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
@@ -147,7 +135,7 @@
           <b>Рекомендуемый режим:</b> ${recommendation}
         `;
 
-        drawChart(prices);
+        drawChart(prices, pivots);
 
       } catch (error) {
         console.error(error);
@@ -155,14 +143,18 @@
       }
     }
 
-    function drawChart(prices) {
+    function drawChart(prices, pivots) {
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
       window.myChart = new Chart(ctx, {
         type: "line",
         data: {
           labels: Array(prices.length).fill(""),
-          datasets: [{ label: "ETH", data: prices, borderColor: "blue" }]
+          datasets: [
+            { label: "ETH", data: prices, borderColor: "blue", borderWidth: 2 },
+            { label: "Support", data: Array(prices.length).fill(pivots.support), borderColor: "green", borderDash: [5, 5] },
+            { label: "Resistance", data: Array(prices.length).fill(pivots.resistance), borderColor: "red", borderDash: [5, 5] }
+          ]
         }
       });
     }
