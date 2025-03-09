@@ -154,8 +154,17 @@
         }
 
         // Расчет тейк-профита и стоп-лосса
-        const takeProfit = direction === "Лонг" ? currentPrice + atr * 2 : currentPrice - atr * 2;
-        const stopLoss = direction === "Лонг" ? currentPrice - atr * 1 : currentPrice + atr * 1;
+        let takeProfit, stopLoss;
+        if (direction === "Лонг") {
+          takeProfit = upperBound + atr * 1; // Тейк-профит за верхней границей
+          stopLoss = lowerBound - atr * 1;   // Стоп-лосс за нижней границей
+        } else if (direction === "Шорт") {
+          takeProfit = lowerBound - atr * 1; // Тейк-профит за нижней границей
+          stopLoss = upperBound + atr * 1;   // Стоп-лосс за верхней границей
+        } else {
+          takeProfit = upperBound + atr * 1; // Нейтральное направление
+          stopLoss = lowerBound - atr * 1;
+        }
 
         // Вывод результатов
         document.getElementById("result").innerHTML = `
