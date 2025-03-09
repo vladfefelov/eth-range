@@ -49,22 +49,46 @@
   </div>
 
   <script>
-    // Расчет экспоненциальной скользящей средней (EMA)
-    function calcEMA(prices, period) {
+    // Функция для расчёта EMA серии (возвращает массив значений, начиная с индекса period-1)
+    function calcEMAseries(prices, period) {
+      let ema = [];
+      // Начальное значение – простое скользящее среднее
+      const sma = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      ema[period - 1] = sma;
       const k = 2 / (period + 1);
-      let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
       for (let i = period; i < prices.length; i++) {
-        ema = prices[i] * k + ema * (1 - k);
+        ema[i] = prices[i] * k + ema[i - 1] * (1 - k);
       }
-      return ema;
+      // Возвращаем часть массива, где EMA определена
+      return ema.slice(period - 1);
     }
 
-    // Расчет RSI с экспоненциальным сглаживанием
+    // Улучшенный расчёт MACD с EMA-сериями и сигнальной линией
+    function calcMACDImproved(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
+      const emaShort = calcEMAseries(prices, shortPeriod); // начинается с индекса shortPeriod-1
+      const emaLong = calcEMAseries(prices, longPeriod);   // начинается с индекса longPeriod-1
+      let macdSeries = [];
+      // Вычисляем разницу для тех индексов, где доступны обе EMA
+      for (let i = 0; i < emaLong.length; i++) {
+        const indexInPrices = i + (longPeriod - 1);
+        const shortIndex = indexInPrices - (shortPeriod - 1);
+        if (shortIndex >= 0 && shortIndex < emaShort.length) {
+          macdSeries.push(emaShort[shortIndex] - emaLong[i]);
+        }
+      }
+      // Сигнальная линия как EMA от macdSeries
+      const signalLineArr = calcEMAseries(macdSeries, signalPeriod);
+      const macd = macdSeries[macdSeries.length - 1];
+      const signal = signalLineArr[signalLineArr.length - 1];
+      return { macd, signal };
+    }
+
+    // Расчёт RSI с экспоненциальным сглаживанием
     function calcRSI(prices, period = 14) {
       let gains = 0, losses = 0;
       for (let i = 1; i <= period; i++) {
         let diff = prices[i] - prices[i - 1];
-        if(diff >= 0) gains += diff;
+        if (diff >= 0) gains += diff;
         else losses -= diff;
       }
       let avgGain = gains / period;
@@ -74,19 +98,24 @@
         avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
         avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
       }
-      if(avgLoss === 0) return 100;
-      let rs = avgGain / avgLoss;
+      if (avgLoss === 0) return 100;
+      const rs = avgGain / avgLoss;
       return 100 - (100 / (1 + rs));
     }
 
-    // Упрощенный расчет MACD (для демонстрации)
-    function calcMACD(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
-      const emaShort = calcEMA(prices, shortPeriod);
-      const emaLong = calcEMA(prices, longPeriod);
-      const macdLine = emaShort - emaLong;
-      // Для упрощения сигнальная линия берется равной macdLine (в полноценном расчете следует вычислить EMA серии MACD)
-      const signalLine = macdLine;
-      return { macd: macdLine, signal: signalLine };
+    // Расчёт ATR (средний истинный диапазон)
+    function calcATR(highs, lows, closes, period = 14) {
+      let trValues = [];
+      for (let i = 1; i < highs.length; i++) {
+        const tr = Math.max(
+          highs[i] - lows[i],
+          Math.abs(highs[i] - closes[i - 1]),
+          Math.abs(lows[i] - closes[i - 1])
+        );
+        trValues.push(tr);
+      }
+      // Среднее значение за последние period периодов
+      return trValues.slice(-period).reduce((sum, v) => sum + v, 0) / period;
     }
 
     async function calculateRange() {
@@ -104,6 +133,7 @@
         const highs = data.map(item => parseFloat(item[2]));
         const lows = data.map(item => parseFloat(item[3]));
         const timestamps = data.map(item => new Date(item[0]));
+        const closes = prices;
 
         const currentPrice = prices[prices.length - 1];
         const support = Math.min(...lows.slice(-20));
@@ -111,44 +141,54 @@
 
         // Вычисляем индикаторы
         const rsi = calcRSI(prices);
-        const macd = calcMACD(prices);
+        const macd = calcMACDImproved(prices);
+        const atr = calcATR(highs, lows, closes);
 
-        // Определяем рекомендацию по направлению сделки
+        // Определяем рекомендацию по направлению сделки на основе RSI и MACD
         let recommendation = "Нейтральный";
-        if(rsi > 65 && macd.macd > macd.signal) {
+        if (rsi > 65 && macd.macd > macd.signal) {
           recommendation = "Лонг";
-        } else if(rsi < 35 && macd.macd < macd.signal) {
+        } else if (rsi < 35 && macd.macd < macd.signal) {
           recommendation = "Шорт";
         }
 
-        // Рекомендации по риск-менеджменту с двумя стратегиями
+        // Риск-менеджмент: три стратегии (процентная, на основе уровней и ATR)
         let riskAdvice = "";
-        if(recommendation === "Лонг") {
-          let sl_percent_price = currentPrice * 0.992; // ~0.8% ниже цены
-          let tp_percent_price = currentPrice * 1.016; // ~1.6% выше цены
+        if (recommendation === "Лонг") {
+          // Процентная стратегия
+          const slPercentPrice = currentPrice * 0.992; // ≈ -0.8%
+          const tpPercentPrice = currentPrice * 1.016; // ≈ +1.6%
+          // ATR стратегия
+          const slATRPrice = currentPrice - atr;
+          const tpATRPrice = currentPrice + 2 * atr;
           riskAdvice = `Рекомендуется открывать Лонг.<br>
-          <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${sl_percent_price.toFixed(2)} USDT (≈ -0.8%), Тейк-профит на ${tp_percent_price.toFixed(2)} USDT (≈ +1.6%).<br>
-          <b>Стратегия 2 (ценовая):</b> Используйте уровень поддержки (${support.toFixed(2)} USDT) как стоп-лосс и уровень сопротивления (${resistance.toFixed(2)} USDT) как тейк-профит.`;
-        } else if(recommendation === "Шорт") {
-          let sl_percent_price = currentPrice * 1.008; // ~0.8% выше цены
-          let tp_percent_price = currentPrice * 0.984; // ~1.6% ниже цены
+            <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${slPercentPrice.toFixed(2)} USDT (≈ -0.8%), Тейк-профит на ${tpPercentPrice.toFixed(2)} USDT (≈ +1.6%).<br>
+            <b>Стратегия 2 (уровни):</b> Стоп-лосс на уровне поддержки (${support.toFixed(2)} USDT), Тейк-профит на уровне сопротивления (${resistance.toFixed(2)} USDT).<br>
+            <b>Стратегия 3 (ATR):</b> Стоп-лосс на ${slATRPrice.toFixed(2)} USDT, Тейк-профит на ${tpATRPrice.toFixed(2)} USDT.`;
+        } else if (recommendation === "Шорт") {
+          const slPercentPrice = currentPrice * 1.008; // ≈ +0.8%
+          const tpPercentPrice = currentPrice * 0.984; // ≈ -1.6%
+          const slATRPrice = currentPrice + atr;
+          const tpATRPrice = currentPrice - 2 * atr;
           riskAdvice = `Рекомендуется открывать Шорт.<br>
-          <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${sl_percent_price.toFixed(2)} USDT (≈ +0.8%), Тейк-профит на ${tp_percent_price.toFixed(2)} USDT (≈ -1.6%).<br>
-          <b>Стратегия 2 (ценовая):</b> Используйте уровень сопротивления (${resistance.toFixed(2)} USDT) как стоп-лосс и уровень поддержки (${support.toFixed(2)} USDT) как тейк-профит.`;
+            <b>Стратегия 1 (процентная):</b> Стоп-лосс на ${slPercentPrice.toFixed(2)} USDT (≈ +0.8%), Тейк-профит на ${tpPercentPrice.toFixed(2)} USDT (≈ -1.6%).<br>
+            <b>Стратегия 2 (уровни):</b> Стоп-лосс на уровне сопротивления (${resistance.toFixed(2)} USDT), Тейк-профит на уровне поддержки (${support.toFixed(2)} USDT).<br>
+            <b>Стратегия 3 (ATR):</b> Стоп-лосс на ${slATRPrice.toFixed(2)} USDT, Тейк-профит на ${tpATRPrice.toFixed(2)} USDT.`;
         } else {
           riskAdvice = "Рынок нейтральный, рекомендуется дождаться более явных сигналов для входа.";
         }
 
-        // Вычисляем стандартные уровни (на основе поддержки/сопротивления)
+        // Дополнительно стандартные уровни (на основе поддержки/сопротивления)
         const takeProfit = resistance * 1.01;
         const stopLoss = support * 0.99;
 
-        // Выводим результаты и рекомендации
+        // Вывод результатов и рекомендаций
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
           <b>Диапазон (поддержка/сопротивление):</b> ${support.toFixed(2)} - ${resistance.toFixed(2)} USDT<br>
           <b>RSI:</b> ${rsi.toFixed(2)}<br>
           <b>MACD:</b> ${macd.macd.toFixed(4)} (Signal: ${macd.signal.toFixed(4)})<br>
+          <b>ATR:</b> ${atr.toFixed(4)}<br>
           <b>Рекомендуемый режим:</b> ${recommendation}<br>
           <b>Стандартные уровни:</b> Тейк-профит на ${takeProfit.toFixed(2)} USDT, Стоп-лосс на ${stopLoss.toFixed(2)} USDT<br>
           <br><b>Рекомендации по риск-менеджменту:</b><br>${riskAdvice}
@@ -161,10 +201,10 @@
       }
     }
 
-    // Функция построения графика с временной осью и чистыми линиями
+    // Построение графика с временной осью (формат дд.MM чч:мм) и линиями без точек
     function drawChart(prices, timestamps, support, resistance) {
       const ctx = document.getElementById("priceChart").getContext("2d");
-      if(window.myChart) window.myChart.destroy();
+      if (window.myChart) window.myChart.destroy();
       
       window.myChart = new Chart(ctx, {
         type: "line",
@@ -208,7 +248,7 @@
                 displayFormats: { hour: "dd.MM HH:mm" }
               },
               ticks: { autoSkip: true, maxTicksLimit: 10 },
-              title: { display: true, text: "Время (дд.ММ чч:мм)" }
+              title: { display: true, text: "Время (дд.MM чч:мм)" }
             },
             y: {
               title: { display: true, text: "Цена (USDT)" },
