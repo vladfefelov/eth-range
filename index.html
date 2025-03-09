@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Расчет диапазона для грид-бота (ETH/USDT)</title>
+  <title>Грид-бот для ETH/USDT (агрессивная стратегия)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
@@ -41,7 +41,7 @@
   </style>
 </head>
 <body>
-  <h1>Расчет диапазона для грид-бота (ETH/USDT)</h1>
+  <h1>Грид-бот для ETH/USDT (агрессивная стратегия)</h1>
   <button onclick="calculateRange()">Рассчитать</button>
   <p id="result"></p>
   <div id="chart-container">
@@ -52,22 +52,22 @@
     // Расчет EMA
     function calcEMA(prices, period) {
       const k = 2 / (period + 1);
-      let ema = [prices[0]];
-      for (let i = 1; i < prices.length; i++) {
-        ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+      let ema = [prices.slice(0, period).reduce((a, b) => a + b, 0) / period]; // Первое значение EMA = SMA
+      for (let i = period; i < prices.length; i++) {
+        ema.push(prices[i] * k + ema[i - period] * (1 - k));
       }
       return ema;
     }
 
     // Расчет MACD
-    function calcMACD(prices) {
-      const emaShort = calcEMA(prices, 12);
-      const emaLong = calcEMA(prices, 26);
+    function calcMACD(prices, shortPeriod = 6, longPeriod = 12, signalPeriod = 9) {
+      const emaShort = calcEMA(prices, shortPeriod);
+      const emaLong = calcEMA(prices, longPeriod);
       const macdSeries = [];
-      for (let i = 25; i < prices.length; i++) {
+      for (let i = longPeriod - 1; i < prices.length; i++) {
         macdSeries.push(emaShort[i] - emaLong[i]);
       }
-      const signalLine = calcEMA(macdSeries, 9);
+      const signalLine = calcEMA(macdSeries, signalPeriod);
       return {
         macd: macdSeries[macdSeries.length - 1],
         signal: signalLine[signalLine.length - 1]
@@ -75,17 +75,17 @@
     }
 
     // Расчет RSI
-    function calcRSI(prices) {
+    function calcRSI(prices, period = 9) {
       let gains = [], losses = [];
       for (let i = 1; i < prices.length; i++) {
         const diff = prices[i] - prices[i - 1];
         gains.push(diff >= 0 ? diff : 0);
         losses.push(diff < 0 ? -diff : 0);
       }
-      let avgGain = gains.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
-      let avgLoss = losses.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
-      const k = 2 / (14 + 1);
-      for (let i = 14; i < gains.length; i++) {
+      let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      const k = 2 / (period + 1);
+      for (let i = period; i < gains.length; i++) {
         avgGain = (avgGain * (1 - k)) + (gains[i] * k);
         avgLoss = (avgLoss * (1 - k)) + (losses[i] * k);
       }
@@ -93,7 +93,7 @@
     }
 
     // Расчет ATR
-    function calcATR(highs, lows, closes) {
+    function calcATR(highs, lows, closes, period = 9) {
       let trValues = [];
       for (let i = 1; i < highs.length; i++) {
         const tr = Math.max(
@@ -103,14 +103,14 @@
         );
         trValues.push(tr);
       }
-      return trValues.slice(-14).reduce((sum, v) => sum + v, 0) / 14;
+      return calcEMA(trValues, period)[trValues.length - 1]; // Используем EMA для ATR
     }
 
     // Основная функция расчета
     async function calculateRange() {
       const symbol = "ETHUSDT";
-      const interval = "1h";
-      const limit = 100;
+      const interval = "5m"; // Более частый интервал
+      const limit = 200; // Больше данных
 
       try {
         const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
@@ -124,46 +124,40 @@
         const closes = prices;
 
         const currentPrice = prices[prices.length - 1];
-        const support = Math.min(...lows.slice(-20));
-        const resistance = Math.max(...highs.slice(-20));
+        const support = Math.min(...lows.slice(-50)); // Увеличить период для точности
+        const resistance = Math.max(...highs.slice(-50));
 
-        // Вычисляем индикаторы
-        const rsi = calcRSI(prices);
-        const macd = calcMACD(prices);
-        const atr = calcATR(highs, lows, closes);
+        // Индикаторы с короткими периодами
+        const rsi = calcRSI(prices, 9); // RSI(9)
+        const macd = calcMACD(prices, 6, 12); // MACD(6, 12)
+        const atr = calcATR(highs, lows, closes, 9); // ATR(9)
 
-        // Определяем направление
+        // Определение направления
         let direction = "Нейтральный";
-        if (rsi > 65 && macd.macd > macd.signal) {
-          direction = "Лонг";
-        } else if (rsi < 35 && macd.macd < macd.signal) {
-          direction = "Шорт";
-        }
+        if (rsi > 70 && macd.macd > macd.signal) direction = "Лонг";
+        else if (rsi < 30 && macd.macd < macd.signal) direction = "Шорт";
 
-        // Расчет диапазона для грид-бота
+        // Узкий диапазон для грид-бота
         let lowerBound, upperBound;
         if (direction === "Лонг") {
-          lowerBound = Math.max(support, currentPrice - atr * 1.5);
-          upperBound = Math.min(resistance, currentPrice + atr * 3);
+          lowerBound = Math.max(support, currentPrice - atr * 0.3);
+          upperBound = Math.min(resistance, currentPrice + atr * 0.6);
         } else if (direction === "Шорт") {
-          lowerBound = Math.max(support, currentPrice - atr * 3);
-          upperBound = Math.min(resistance, currentPrice + atr * 1.5);
+          lowerBound = Math.max(support, currentPrice - atr * 0.6);
+          upperBound = Math.min(resistance, currentPrice + atr * 0.3);
         } else {
           lowerBound = support;
           upperBound = resistance;
         }
 
-        // Расчет тейк-профита и стоп-лосса
+        // Агрессивные тейк-профит и стоп-лосс
         let takeProfit, stopLoss;
         if (direction === "Лонг") {
-          takeProfit = upperBound + atr * 1; // Тейк-профит за верхней границей
-          stopLoss = lowerBound - atr * 1;   // Стоп-лосс за нижней границей
+          takeProfit = currentPrice * 1.02; // 2% тейк-профит
+          stopLoss = currentPrice * 0.99;   // 1% стоп-лосс
         } else if (direction === "Шорт") {
-          takeProfit = lowerBound - atr * 1; // Тейк-профит за нижней границей
-          stopLoss = upperBound + atr * 1;   // Стоп-лосс за верхней границей
-        } else {
-          takeProfit = upperBound + atr * 1; // Нейтральное направление
-          stopLoss = lowerBound - atr * 1;
+          takeProfit = currentPrice * 0.98; // 2% тейк-профит
+          stopLoss = currentPrice * 1.01;   // 1% стоп-лосс
         }
 
         // Вывод результатов
@@ -243,8 +237,8 @@
             x: {
               type: "time",
               time: {
-                unit: "hour",
-                displayFormats: { hour: "dd.MM HH:mm" }
+                unit: "minute",
+                displayFormats: { minute: "dd.MM HH:mm" }
               },
               ticks: { autoSkip: true, maxTicksLimit: 10 },
               title: { display: true, text: "Время (дд.MM чч:мм)" }
