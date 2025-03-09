@@ -153,14 +153,16 @@
         }
 
         // Агрессивные тейк-профит и стоп-лосс
-        let takeProfit = currentPrice * 1.02; // По умолчанию 2% тейк-профит
-        let stopLoss = currentPrice * 0.98; // По умолчанию 2% стоп-лосс
+        let takeProfit, stopLoss;
         if (direction === "Лонг") {
-          takeProfit = currentPrice * 1.02; // 2% тейк-профит
-          stopLoss = currentPrice * 0.99;   // 1% стоп-лосс
+          takeProfit = upperBound + atr * 1; // Тейк-профит выше верхней границы
+          stopLoss = lowerBound - atr * 1;   // Стоп-лосс ниже нижней границы
         } else if (direction === "Шорт") {
-          takeProfit = currentPrice * 0.98; // 2% тейк-профит
-          stopLoss = currentPrice * 1.01;   // 1% стоп-лосс
+          takeProfit = lowerBound - atr * 1; // Тейк-профит ниже нижней границы
+          stopLoss = upperBound + atr * 1;   // Стоп-лосс выше верхней границы
+        } else {
+          takeProfit = upperBound + atr * 1; // Нейтральное направление
+          stopLoss = lowerBound - atr * 1;
         }
 
         // Проверка на undefined
