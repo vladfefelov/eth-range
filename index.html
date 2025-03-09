@@ -49,7 +49,7 @@
   </div>
 
   <script>
-    // Расчет EMA (экспоненциальная скользящая средняя)
+    // Расчет EMA
     function calcEMA(prices, period) {
       const k = 2 / (period + 1);
       let ema = [prices[0]];
@@ -92,7 +92,7 @@
       return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
     }
 
-    // Расчет ATR (средний истинный диапазон)
+    // Расчет ATR
     function calcATR(highs, lows, closes, period = 14) {
       let trValues = [];
       for (let i = 1; i < highs.length; i++) {
@@ -143,6 +143,7 @@
         // Риск-менеджмент
         let riskAdvice = "";
         let stopLoss = null, takeProfit = null, strategyUsed = "";
+        let gridStopLoss = null, gridTakeProfit = null;
 
         if (recommendation === "Лонг") {
           const riskPercentSL = 2;
@@ -167,6 +168,9 @@
             <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
             <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
             Дополнительно: <b>Стратегия (уровни):</b> Стоп-лосс на уровне поддержки (${support.toFixed(2)} USDT), Тейк-профит на уровне сопротивления (${resistance.toFixed(2)} USDT).`;
+          // Стоп-лосс и тейк-профит для грид-бота
+          gridStopLoss = Math.min(support, stopLoss - atr); // Учитываем поддержку и волатильность
+          gridTakeProfit = Math.max(resistance, takeProfit + atr); // Учитываем сопротивление и волатильность
         } else if (recommendation === "Шорт") {
           const riskPercentSL = 2;
           const riskPercentTP = 4;
@@ -190,10 +194,16 @@
             <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
             <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
             Дополнительно: <b>Стратегия (уровни):</b> Стоп-лосс на уровне сопротивления (${resistance.toFixed(2)} USDT), Тейк-профит на уровне поддержки (${support.toFixed(2)} USDT).`;
+          // Стоп-лосс и тейк-профит для грид-бота
+          gridStopLoss = Math.max(resistance, stopLoss + atr); // Учитываем сопротивление и волатильность
+          gridTakeProfit = Math.min(support, takeProfit - atr); // Учитываем поддержку и волатильность
         } else {
           riskAdvice = `Рынок нейтральный, рекомендуется настроить грид-бота на работу в обе стороны.<br>
             Выставьте сетку ордеров вверх и вниз от текущей цены, используя уровни поддержки <b>${support.toFixed(2)} USDT</b> и сопротивления <b>${resistance.toFixed(2)} USDT</b>.<br>
             Можно также задействовать динамическое расстояние между ордерами на основе волатильности (ATR = <b>${atr.toFixed(2)}</b>).`;
+          // Стоп-лосс и тейк-профит для грид-бота в нейтральном режиме
+          gridStopLoss = currentPrice + atr * 3; // Учитываем волатильность
+          gridTakeProfit = currentPrice - atr * 3; // Учитываем волатильность
         }
 
         const takeProfitStandard = resistance * 1.01;
@@ -212,6 +222,19 @@
             Динамический диапазон: <b>${(currentPrice - atr * 2).toFixed(2)} - ${(currentPrice + atr * 2).toFixed(2)} USDT</b> (на основе ATR)`;
         }
 
+        // Рекомендации по стоп-лоссу и тейк-профиту для грид-бота
+        let gridBotStopTake = "";
+        if (recommendation === "Лонг") {
+          gridBotStopTake = `Стоп-лосс для грид-бота: <b>${gridStopLoss.toFixed(2)} USDT</b> (остановите бота, если цена падает ниже этого уровня)<br>
+            Тейк-профит для грид-бота: <b>${gridTakeProfit.toFixed(2)} USDT</b> (остановите бота и зафиксируйте прибыль, если цена достигает этого уровня)`;
+        } else if (recommendation === "Шорт") {
+          gridBotStopTake = `Стоп-лосс для грид-бота: <b>${gridStopLoss.toFixed(2)} USDT</b> (остановите бота, если цена растет выше этого уровня)<br>
+            Тейк-профит для грид-бота: <b>${gridTakeProfit.toFixed(2)} USDT</b> (остановите бота и зафиксируйте прибыль, если цена падает до этого уровня)`;
+        } else {
+          gridBotStopTake = `Стоп-лосс для грид-бота: <b>${gridStopLoss.toFixed(2)} USDT</b> (остановите бота, если цена растет выше этого уровня)<br>
+            Тейк-профит для грид-бота: <b>${gridTakeProfit.toFixed(2)} USDT</b> (остановите бота и зафиксируйте прибыль, если цена падает ниже этого уровня)`;
+        }
+
         // Вывод результатов
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
@@ -222,10 +245,11 @@
           <b>Рекомендуемый режим:</b> ${recommendation}<br>
           <b>Стандартные уровни:</b> Тейк-профит на ${takeProfitStandard.toFixed(2)} USDT, Стоп-лосс на ${stopLossStandard.toFixed(2)} USDT<br>
           <br><b>Рекомендации по риск-менеджменту:</b><br>${riskAdvice}<br>
-          <br><b>Рекомендации для грид-бота:</b><br>${gridBotRange}
+          <br><b>Рекомендации для грид-бота:</b><br>${gridBotRange}<br>
+          <br><b>Уровни остановки для грид-бота:</b><br>${gridBotStopTake}
         `;
 
-        drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation);
+        drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation, gridStopLoss, gridTakeProfit);
       } catch (error) {
         console.error("Ошибка при загрузке данных:", error);
         document.getElementById("result").innerText = `Ошибка загрузки данных: ${error.message}`;
@@ -233,7 +257,7 @@
     }
 
     // Построение графика
-    function drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation) {
+    function drawChart(prices, timestamps, support, resistance, stopLoss, takeProfit, recommendation, gridStopLoss, gridTakeProfit) {
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
 
@@ -266,7 +290,7 @@
 
       if (recommendation !== "Нейтральный" && stopLoss !== null && takeProfit !== null) {
         datasets.push({
-          label: "Стоп-лосс",
+          label: "Стоп-лосс (торговля)",
           data: Array(prices.length).fill(stopLoss),
           borderColor: "orange",
           borderWidth: 1.5,
@@ -274,11 +298,31 @@
           pointRadius: 0
         });
         datasets.push({
-          label: "Тейк-профит",
+          label: "Тейк-профит (торговля)",
           data: Array(prices.length).fill(takeProfit),
           borderColor: "purple",
           borderWidth: 1.5,
           borderDash: [5, 5],
+          pointRadius: 0
+        });
+      }
+
+      // Добавляем линии стоп-лосса и тейк-профита для грид-бота
+      if (gridStopLoss !== null && gridTakeProfit !== null) {
+        datasets.push({
+          label: "Стоп-лосс (грид-бот)",
+          data: Array(prices.length).fill(gridStopLoss),
+          borderColor: "darkorange",
+          borderWidth: 1.5,
+          borderDash: [10, 10],
+          pointRadius: 0
+        });
+        datasets.push({
+          label: "Тейк-профит (грид-бот)",
+          data: Array(prices.length).fill(gridTakeProfit),
+          borderColor: "darkpurple",
+          borderWidth: 1.5,
+          borderDash: [10, 10],
           pointRadius: 0
         });
       }
@@ -317,4 +361,4 @@
   </script>
 </body>
 </html>
-​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
+​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
