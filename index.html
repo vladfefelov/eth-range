@@ -111,7 +111,6 @@
       const symbol = "ETHUSDT";
       const interval = "1h";
       const limit = 100;
-      const leverage = 50; // Плечо
 
       try {
         const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
@@ -141,42 +140,33 @@
           direction = "Шорт";
         }
 
-        // Расчет уровня ликвидации
-        const liquidationDistance = currentPrice / leverage;
-        const liquidationLevel = direction === "Лонг" ? currentPrice - liquidationDistance : currentPrice + liquidationDistance;
-
         // Расчет диапазона для грид-бота
         let lowerBound, upperBound;
-        const gridCount = 60; // Фиксированное количество сеток
         if (direction === "Лонг") {
           lowerBound = Math.max(support, currentPrice - atr * 1.5);
           upperBound = Math.min(resistance, currentPrice + atr * 3);
-          if (lowerBound < liquidationLevel) lowerBound = liquidationLevel + (atr * 0.1); // Защита от ликвидации
         } else if (direction === "Шорт") {
           lowerBound = Math.max(support, currentPrice - atr * 3);
           upperBound = Math.min(resistance, currentPrice + atr * 1.5);
-          if (upperBound > liquidationLevel) upperBound = liquidationLevel - (atr * 0.1); // Защита от ликвидации
         } else {
           lowerBound = support;
           upperBound = resistance;
-          if (upperBound > liquidationLevel) upperBound = liquidationLevel - (atr * 0.1);
-          if (lowerBound < liquidationLevel - liquidationDistance) lowerBound = liquidationLevel - liquidationDistance + (atr * 0.1);
         }
 
-        const step = (upperBound - lowerBound) / gridCount;
+        // Расчет тейк-профита и стоп-лосса
+        const takeProfit = direction === "Лонг" ? currentPrice + atr * 2 : currentPrice - atr * 2;
+        const stopLoss = direction === "Лонг" ? currentPrice - atr * 1 : currentPrice + atr * 1;
 
         // Вывод результатов
         document.getElementById("result").innerHTML = `
           <b>Текущая цена:</b> ${currentPrice.toFixed(2)} USDT<br>
           <b>Диапазон для грид-бота:</b> ${lowerBound.toFixed(2)} - ${upperBound.toFixed(2)} USDT<br>
-          <b>Шаг сетки:</b> ${step.toFixed(2)} USDT<br>
-          <b>Количество сеток:</b> ${gridCount}<br>
-          <b>Уровень ликвидации:</b> ${liquidationLevel.toFixed(2)} USDT<br>
+          <b>Тейк-профит:</b> ${takeProfit.toFixed(2)} USDT<br>
+          <b>Стоп-лосс:</b> ${stopLoss.toFixed(2)} USDT<br>
           <b>Направление:</b> ${direction}<br>
-          <b>Предупреждение:</b> Диапазон скорректирован для минимизации риска ликвидации с учетом плеча ${leverage}x.
         `;
 
-        drawChart(prices, timestamps, lowerBound, upperBound);
+        drawChart(prices, timestamps, lowerBound, upperBound, takeProfit, stopLoss);
       } catch (error) {
         console.error("Ошибка при загрузке данных:", error);
         document.getElementById("result").innerText = `Ошибка загрузки данных: ${error.message}`;
@@ -184,7 +174,7 @@
     }
 
     // Построение графика
-    function drawChart(prices, timestamps, lowerBound, upperBound) {
+    function drawChart(prices, timestamps, lowerBound, upperBound, takeProfit, stopLoss) {
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
 
@@ -209,6 +199,22 @@
           label: "Верхняя граница",
           data: Array(prices.length).fill(upperBound),
           borderColor: "red",
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0
+        },
+        {
+          label: "Тейк-профит",
+          data: Array(prices.length).fill(takeProfit),
+          borderColor: "purple",
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0
+        },
+        {
+          label: "Стоп-лосс",
+          data: Array(prices.length).fill(stopLoss),
+          borderColor: "orange",
           borderWidth: 1.5,
           borderDash: [5, 5],
           pointRadius: 0
@@ -249,4 +255,3 @@
   </script>
 </body>
 </html>
-​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
