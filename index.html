@@ -93,18 +93,38 @@
     }
 
     // Расчет ATR
-    function calcATR(highs, lows, closes, period = 9) {
-      let trValues = [];
-      for (let i = 1; i < highs.length; i++) {
-        const tr = Math.max(
-          highs[i] - lows[i],
-          Math.abs(highs[i] - closes[i - 1]),
-          Math.abs(lows[i] - closes[i - 1])
-        );
-        trValues.push(tr);
-      }
-      return calcEMA(trValues, period)[trValues.length - 1]; // Используем EMA для ATR
+function calcATR(highs, lows, closes, period = 9) {
+  if (!highs.length || !lows.length || !closes.length) {
+    console.error("Ошибка: highs, lows или closes пустые!");
+    return NaN;
+  }
+
+  let trValues = [];
+  for (let i = 1; i < highs.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    if (isNaN(tr)) {
+      console.error(`Ошибка в TR[${i}]:`, highs[i], lows[i], closes[i - 1]);
     }
+    trValues.push(tr);
+  }
+
+  if (trValues.length === 0) {
+    console.error("Ошибка: TR values пустые!");
+    return NaN;
+  }
+
+  const atr = calcEMA(trValues, period);
+  if (isNaN(atr)) {
+    console.error("Ошибка: ATR NaN!");
+  }
+
+  return atr;
+}
+
 
    // Основная функция расчета
 async function calculateRange() {
