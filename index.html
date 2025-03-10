@@ -51,6 +51,11 @@
   <script>
     // Расчет EMA
     function calcEMA(prices, period) {
+
+      console.log("EMA Prices:", prices);
+console.log("EMA Length:", prices.length);
+
+      
       const k = 2 / (period + 1);
       let ema = [prices.slice(0, period).reduce((a, b) => a + b, 0) / period]; // Первое значение EMA = SMA
       for (let i = period; i < prices.length; i++) {
