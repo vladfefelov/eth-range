@@ -112,7 +112,7 @@ function calcATR(highs, lows, closes, period = 9) {
       Math.abs(lows[i] - closes[i - 1])
     );
     if (isNaN(tr)) {
-      console.error(Ошибка в TR[${i}]:, highs[i], lows[i], closes[i - 1]);
+      console.error("Ошибка в TR",[${i}]:, highs[i], lows[i], closes[i - 1]);
     }
     trValues.push(tr);
   }
