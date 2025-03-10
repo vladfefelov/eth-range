@@ -131,6 +131,9 @@ console.log("ATR Result:", calcEMA(trValues, period)[trValues.length - 1]);
     console.error("Ошибка: ATR NaN!");
   }
 
+  console.log("ATR EMA Output:", atr);
+console.log("ATR EMA Last Value:", atr ? atr[atr.length - 1] : "undefined");
+
   return atr;
 }
 
