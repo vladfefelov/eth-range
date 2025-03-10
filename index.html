@@ -51,11 +51,6 @@
   <script>
     // Расчет EMA
     function calcEMA(prices, period) {
-
-      console.log("EMA Prices:", prices);
-console.log("EMA Length:", prices.length);
-
-      
       const k = 2 / (period + 1);
       let ema = [prices.slice(0, period).reduce((a, b) => a + b, 0) / period]; // Первое значение EMA = SMA
       for (let i = period; i < prices.length; i++) {
@@ -98,55 +93,26 @@ console.log("EMA Length:", prices.length);
     }
 
     // Расчет ATR
-function calcATR(highs, lows, closes, period = 9) {
-  if (!highs.length || !lows.length || !closes.length) {
-    console.error("Ошибка: highs, lows или closes пустые!");
-    return NaN;
-  }
-
-  let trValues = [];
-  for (let i = 1; i < highs.length; i++) {
-    const tr = Math.max(
-      highs[i] - lows[i],
-      Math.abs(highs[i] - closes[i - 1]),
-      Math.abs(lows[i] - closes[i - 1])
-    );
-    if (isNaN(tr)) {
-      console.error("Ошибка в TR",[${i}]:, highs[i], lows[i], closes[i - 1]);
+    function calcATR(highs, lows, closes, period = 9) {
+      let trValues = [];
+      for (let i = 1; i < highs.length; i++) {
+        const tr = Math.max(
+          highs[i] - lows[i],
+          Math.abs(highs[i] - closes[i - 1]),
+          Math.abs(lows[i] - closes[i - 1])
+        );
+        trValues.push(tr);
+      }
+      return calcEMA(trValues, period)[trValues.length - 1]; // Используем EMA для ATR
     }
-    trValues.push(tr);
-  }
-
-  if (trValues.length === 0) {
-    console.error("Ошибка: TR values пустые!");
-    return NaN;
-  }
-  
-console.log("TR Values:", trValues);
-console.log("ATR EMA Input:", calcEMA(trValues, period));
-console.log("ATR Result:", calcEMA(trValues, period)[trValues.length - 1]);
-
-  const atr = calcEMA(trValues, period);
-  if (isNaN(atr)) {
-    console.error("Ошибка: ATR NaN!");
-  }
-
-  console.log("ATR EMA Output:", atr);
-console.log("ATR EMA Last Value:", atr ? atr[atr.length - 1] : "undefined");
-
-  return atr;
-}
-
 
    // Основная функция расчета
-// Основная функция расчета
 async function calculateRange() {
   const symbol = "ETHUSDT";
   const interval = "5m"; // Более частый интервал
   const limit = 200; // Больше данных
 
   try {
-    console.log("Загрузка данных с Binance API...");
     const response = await fetch(https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit});
     const data = await response.json();
 
@@ -165,23 +131,10 @@ async function calculateRange() {
     const support = Math.min(...lows.slice(-50)); // Увеличить период для точности
     const resistance = Math.max(...highs.slice(-50));
 
-    console.log("Текущая цена:", currentPrice);
-    console.log("Поддержка (support):", support);
-    console.log("Сопротивление (resistance):", resistance);
-
     // Индикаторы с короткими периодами
     const rsi = calcRSI(prices, 9); // RSI(9)
     const macd = calcMACD(prices, 6, 12); // MACD(6, 12)
     const atr = calcATR(highs, lows, closes, 9); // ATR(9)
-
-    console.log("RSI:", rsi);
-    console.log("MACD:", macd);
-    console.log("ATR:", atr);
-
-    // Проверка на NaN
-    if (isNaN(atr)) {
-      throw new Error("ATR равен NaN. Проверьте данные и расчеты.");
-    }
 
     // Определение направления
     let direction = "Нейтральный";
@@ -199,9 +152,6 @@ async function calculateRange() {
       upperBound = Math.min(resistance, currentPrice + atr * 0.3);
     }
 
-    console.log("Нижняя граница (lowerBound):", lowerBound);
-    console.log("Верхняя граница (upperBound):", upperBound);
-
     // Тейк-профит и стоп-лосс для всех позиций
     let takeProfit, stopLoss;
     if (direction === "Лонг") {
@@ -214,14 +164,6 @@ async function calculateRange() {
       // Нейтральная позиция
       takeProfit = upperBound + atr * 1; // Тейк-профит выше верхней границы
       stopLoss = lowerBound - atr * 1;   // Стоп-лосс ниже нижней границы
-    }
-
-    console.log("Тейк-профит (takeProfit):", takeProfit);
-    console.log("Стоп-лосс (stopLoss):", stopLoss);
-
-    // Проверка на NaN
-    if (isNaN(takeProfit) || isNaN(stopLoss)) {
-      throw new Error("Тейк-профит или стоп-лосс равен NaN. Проверьте данные и расчеты.");
     }
 
     // Вывод результатов
