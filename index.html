@@ -139,12 +139,14 @@ console.log("ATR EMA Last Value:", atr ? atr[atr.length - 1] : "undefined");
 
 
    // Основная функция расчета
+// Основная функция расчета
 async function calculateRange() {
   const symbol = "ETHUSDT";
   const interval = "5m"; // Более частый интервал
   const limit = 200; // Больше данных
 
   try {
+    console.log("Загрузка данных с Binance API...");
     const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
     const data = await response.json();
 
@@ -163,10 +165,23 @@ async function calculateRange() {
     const support = Math.min(...lows.slice(-50)); // Увеличить период для точности
     const resistance = Math.max(...highs.slice(-50));
 
+    console.log("Текущая цена:", currentPrice);
+    console.log("Поддержка (support):", support);
+    console.log("Сопротивление (resistance):", resistance);
+
     // Индикаторы с короткими периодами
     const rsi = calcRSI(prices, 9); // RSI(9)
     const macd = calcMACD(prices, 6, 12); // MACD(6, 12)
     const atr = calcATR(highs, lows, closes, 9); // ATR(9)
+
+    console.log("RSI:", rsi);
+    console.log("MACD:", macd);
+    console.log("ATR:", atr);
+
+    // Проверка на NaN
+    if (isNaN(atr)) {
+      throw new Error("ATR равен NaN. Проверьте данные и расчеты.");
+    }
 
     // Определение направления
     let direction = "Нейтральный";
@@ -184,14 +199,9 @@ async function calculateRange() {
       upperBound = Math.min(resistance, currentPrice + atr * 0.3);
     }
 
+    console.log("Нижняя граница (lowerBound):", lowerBound);
+    console.log("Верхняя граница (upperBound):", upperBound);
 
-    console.log("ATR:", atr);
-console.log("Upper Bound:", upperBound);
-console.log("Lower Bound:", lowerBound);
-console.log("Take Profit Calculation:", upperBound + atr);
-console.log("Stop Loss Calculation:", lowerBound - atr);
-
-    
     // Тейк-профит и стоп-лосс для всех позиций
     let takeProfit, stopLoss;
     if (direction === "Лонг") {
@@ -204,6 +214,14 @@ console.log("Stop Loss Calculation:", lowerBound - atr);
       // Нейтральная позиция
       takeProfit = upperBound + atr * 1; // Тейк-профит выше верхней границы
       stopLoss = lowerBound - atr * 1;   // Стоп-лосс ниже нижней границы
+    }
+
+    console.log("Тейк-профит (takeProfit):", takeProfit);
+    console.log("Стоп-лосс (stopLoss):", stopLoss);
+
+    // Проверка на NaN
+    if (isNaN(takeProfit) || isNaN(stopLoss)) {
+      throw new Error("Тейк-профит или стоп-лосс равен NaN. Проверьте данные и расчеты.");
     }
 
     // Вывод результатов
