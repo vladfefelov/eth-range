@@ -133,7 +133,7 @@ console.log("ATR EMA Input:", calcEMA(trValues, period));
 console.log("ATR Result:", calcEMA(trValues, period)[trValues.length - 1]);
 
   const atr = calcEMA(trValues, period);
-  if (isNaN(atr)) {
+  if (isNaN(atr[atr.length - 1])) {
     console.error("Ошибка: ATR NaN!");
   }
 
