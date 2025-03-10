@@ -152,6 +152,14 @@ async function calculateRange() {
       upperBound = Math.min(resistance, currentPrice + atr * 0.3);
     }
 
+
+    console.log("ATR:", atr);
+console.log("Upper Bound:", upperBound);
+console.log("Lower Bound:", lowerBound);
+console.log("Take Profit Calculation:", upperBound + atr);
+console.log("Stop Loss Calculation:", lowerBound - atr);
+
+    
     // Тейк-профит и стоп-лосс для всех позиций
     let takeProfit, stopLoss;
     if (direction === "Лонг") {
