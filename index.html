@@ -104,6 +104,12 @@ function calcATR(highs, lows, closes, period = 9) {
     return NaN;
   }
 
+  // Проверка на NaN в данных
+  if (highs.some(isNaN) || lows.some(isNaN) || closes.some(isNaN)) {
+    console.error("Ошибка: highs, lows или closes содержат NaN!");
+    return NaN;
+  }
+
   let trValues = [];
   for (let i = 1; i < highs.length; i++) {
     const tr = Math.max(
@@ -131,7 +137,7 @@ console.log("ATR Result:", calcEMA(trValues, period)[trValues.length - 1]);
     console.error("Ошибка: ATR NaN!");
   }
 
-  return atr;
+  return atr[atr.length - 1];
 }
 
 
