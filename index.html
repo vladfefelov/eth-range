@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Грид-бот ETH/USDT (Продвинутый Анализ v2)</title>
+  <title>Грид-бот ETH/USDT (Продвинутый Анализ v2.1 - с Направлением)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
@@ -15,6 +15,10 @@
     button:hover { background-color: #0056b3; }
     #result { font-size: 15px; line-height: 1.6; margin-bottom: 15px; text-align: left; max-width: 1000px; margin-left: auto; margin-right: auto; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; white-space: pre-wrap; }
     .warning { color: #dc3545; font-weight: bold; }
+    .recommend-long { color: #28a745; font-weight: bold; } /* Зеленый */
+    .recommend-short { color: #dc3545; font-weight: bold; } /* Красный */
+    .recommend-neutral { color: #17a2b8; font-weight: bold; } /* Бирюзовый */
+    .recommend-avoid { color: #fd7e14; font-weight: bold; } /* Оранжевый */
     .confidence-high { color: #28a745; font-weight: bold; }
     .confidence-medium { color: #ffc107; font-weight: bold; }
     .confidence-low { color: #fd7e14; font-weight: bold; }
@@ -22,8 +26,8 @@
   </style>
 </head>
 <body>
-  <h1>Грид-бот ETH/USDT (Продвинутый Анализ v2)</h1>
-  <p>Анализ 1h/4h уровней, Bollinger Bands и ADX для нейтральной стратегии</p>
+  <h1>Грид-бот ETH/USDT (Продвинутый Анализ v2.1 - с Направлением)</h1>
+  <p>Анализ 1h/4h уровней, BB, ADX и Рекомендация по Направлению</p>
 
   <div>
     <button onclick="calculateRange()">Рассчитать Рекомендации</button>
@@ -42,43 +46,43 @@
 
     const SETTINGS = {
       // Периоды данных (в днях, для основного интервала)
-      historicalDays: 10,     // Берем чуть больше данных для надежности индикаторов
+      historicalDays: 10,
       // Настройки Volume Profile / Key Levels
-      volumeThreshold: 0.5,  // Порог для силы уровня (0-1), можно подбирать 0.4-0.7
-      levelProximityFactor: 0.015, // Насколько близко к BB искать S/R для "примагничивания" (1.5% от цены)
-      mtfConfirmProximity: 0.01, // Насколько близко должен быть 4h уровень к 1h для подтверждения (1%)
+      volumeThreshold: 0.5,
+      levelProximityFactor: 0.015,
+      mtfConfirmProximity: 0.01,
       // Настройки Bollinger Bands (для 1h)
       bbPeriod: 20,
       bbStdDev: 2,
       // Настройки EMA (сглаженной цены, 1h)
       priceSmoothingPeriod: 9,
+      emaSlopePeriod: 3, // Период для определения наклона EMA
       // Настройки ATR (1h)
       atrPeriod: 14,
-      minRangeAtrMultiple: 0.75, // Минимальная ширина диапазона как доля ATR
+      minRangeAtrMultiple: 0.75,
       // Настройки ADX (1h)
       adxPeriod: 14,
-      adxTrendThreshold: 25, // Порог ADX для определения тренда
+      adxTrendThreshold: 25,
+      diDifferenceThreshold: 1.3, // Насколько DI+ должен быть больше DI- (или наоборот) для сигнала в тренде
       // Параметры запасных границ (Fallback)
-      fallbackAtrMultiple: 1.5 // Множитель ATR для запасных границ от сглаженной цены
+      fallbackAtrMultiple: 1.5
     };
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-
-    // Загрузка данных с Binance
-    async function fetchData(symbol, interval, days) {
+    // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ --- (fetchData, calcEMA, calcSMA, calcStdDev, calcBollingerBands, calcATR, findKeyLevels - без изменений, оставляем как в v2)
+     // Загрузка данных с Binance
+     async function fetchData(symbol, interval, days) {
         const endTime = Date.now();
         const startTime = endTime - days * 24 * 60 * 60 * 1000;
-        // Binance API имеет лимит на кол-во свечей (обычно 1000-1500). Рассчитаем лимит.
         let limit;
         const msInInterval = {
             '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000, '30m': 1800000,
             '1h': 3600000, '2h': 7200000, '4h': 14400000, '6h': 21600000, '8h': 28800000, '12h': 43200000,
             '1d': 86400000, '3d': 259200000, '1w': 604800000
-        }[interval] || 3600000; // По умолчанию 1 час
-        limit = Math.min(Math.ceil((endTime - startTime) / msInInterval) + 1, 1000); // Ограничим 1000 свечей
+        }[interval] || 3600000;
+        limit = Math.min(Math.ceil((endTime - startTime) / msInInterval) + 1, 1000);
 
         const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&startTime=${startTime}&endTime=${endTime}&limit=${limit}`;
-        console.log(`Workspaceing: ${url}`); // Логгируем URL для отладки
+        console.log(`Workspaceing: ${url}`);
         const response = await fetch(url);
         if (!response.ok) {
            throw new Error(`Ошибка API Binance (${interval}): ${response.status} ${response.statusText}`);
@@ -87,19 +91,13 @@
          if (!Array.isArray(data) || data.length === 0) {
            throw new Error(`Ошибка API (${interval}): данные не загружены или пусты.`);
          }
-         // Парсим данные
          return data.map(item => ({
-             timestamp: parseInt(item[0]),
-             open: parseFloat(item[1]),
-             high: parseFloat(item[2]),
-             low: parseFloat(item[3]),
-             close: parseFloat(item[4]),
-             volume: parseFloat(item[5])
+             timestamp: parseInt(item[0]), open: parseFloat(item[1]), high: parseFloat(item[2]),
+             low: parseFloat(item[3]), close: parseFloat(item[4]), volume: parseFloat(item[5])
          }));
     }
-
-    // Расчет EMA
-    function calcEMA(data, period) {
+     // Расчет EMA
+     function calcEMA(data, period) { /* ... без изменений ... */
       if (!data || data.length < period) return [];
       const k = 2 / (period + 1);
       let emaArray = [];
@@ -109,10 +107,9 @@
         emaArray.push(data[i] * k + emaArray[emaArray.length - 1] * (1 - k));
       }
       return Array(period - 1).fill(NaN).concat(emaArray);
-    }
-
-    // Расчет SMA
-    function calcSMA(data, period) {
+     }
+     // Расчет SMA
+     function calcSMA(data, period) { /* ... без изменений ... */
         if (!data || data.length < period) return [];
         let smaArray = [];
         let sum = 0;
@@ -127,15 +124,14 @@
         }
         return Array(period - 1).fill(NaN).concat(smaArray);
     }
-
-    // Расчет стандартного отклонения
-    function calcStdDev(data, period) {
+     // Расчет стандартного отклонения
+     function calcStdDev(data, period) { /* ... без изменений ... */
         if (!data || data.length < period) return [];
         let stdDevArray = [];
-        const sma = calcSMA(data, period); // Нужна SMA для расчета
+        const sma = calcSMA(data, period);
         for (let i = period - 1; i < data.length; i++) {
             const slice = data.slice(i - period + 1, i + 1);
-            const mean = sma[i - (period - 1)]; // SMA уже смещена
+            const mean = sma[i - (period - 1)];
             if (isNaN(mean)) {
                  stdDevArray.push(NaN);
                  continue;
@@ -143,22 +139,18 @@
             const variance = slice.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / period;
             stdDevArray.push(Math.sqrt(variance));
         }
-         // Длина stdDevArray будет data.length - (period - 1)
-         // Дополняем NaN в начало, чтобы длина совпала с data.length
          return Array(period - 1).fill(NaN).concat(stdDevArray);
     }
-
-    // Расчет Bollinger Bands
-    function calcBollingerBands(closes, period, stdDevMultiplier) {
+     // Расчет Bollinger Bands
+     function calcBollingerBands(closes, period, stdDevMultiplier) { /* ... без изменений ... */
         const middleBand = calcSMA(closes, period);
         const stdDev = calcStdDev(closes, period);
         const upperBand = middleBand.map((sma, i) => !isNaN(sma) && !isNaN(stdDev[i]) ? sma + stdDevMultiplier * stdDev[i] : NaN);
         const lowerBand = middleBand.map((sma, i) => !isNaN(sma) && !isNaN(stdDev[i]) ? sma - stdDevMultiplier * stdDev[i] : NaN);
         return { middleBand, upperBand, lowerBand };
     }
-
-    // Расчет ATR
-     function calcATR(highs, lows, closes, period) {
+     // Расчет ATR
+     function calcATR(highs, lows, closes, period) { /* ... без изменений ... */
         if (!highs || highs.length <= period) return { atr: NaN, averageAtr: NaN };
         let trValues = [];
         trValues.push(highs[0] - lows[0]);
@@ -168,138 +160,102 @@
             const tr3 = Math.abs(lows[i] - closes[i - 1]);
             trValues.push(Math.max(tr1, tr2, tr3));
         }
-        const atrArray = calcEMA(trValues, period); // Используем EMA для ATR
+        const atrArray = calcEMA(trValues, period);
         const currentAtr = atrArray.length > 0 ? atrArray[atrArray.length - 1] : NaN;
-        // Рассчитаем средний ATR за последний период для сравнения
         const recentAtrValues = atrArray.slice(-period);
         const averageAtr = recentAtrValues.length > 0 ? recentAtrValues.reduce((a,b)=>a+b,0) / recentAtrValues.length : NaN;
-
         return { atr: currentAtr, averageAtr: averageAtr };
      }
-
-    // Расчет ADX
-    function calcADX(highs, lows, closes, period) {
-        if (!highs || highs.length < period * 2) return { adx: NaN, plusDI: NaN, minusDI: NaN }; // ADX требует больше данных
-
-        let plusDM = [0];
-        let minusDM = [0];
-        let tr = [highs[0] - lows[0]]; // TR для первого элемента
-
-        for (let i = 1; i < highs.length; i++) {
-            let moveUp = highs[i] - highs[i-1];
-            let moveDown = lows[i-1] - lows[i];
-
-            plusDM.push((moveUp > moveDown && moveUp > 0) ? moveUp : 0);
-            minusDM.push((moveDown > moveUp && moveDown > 0) ? moveDown : 0);
-
-            let tr1 = highs[i] - lows[i];
-            let tr2 = Math.abs(highs[i] - closes[i-1]);
-            let tr3 = Math.abs(lows[i] - closes[i-1]);
-            tr.push(Math.max(tr1, tr2, tr3));
-        }
-
-        // Используем Wilder's Smoothing (эквивалентно EMA с периодом 2*N - 1)
-        const wilderPeriod = period; // Wilder использовал просто N
-        const smooth = (data, p) => {
-            let smoothed = [data.slice(0, p).reduce((a, b) => a + b, 0)]; // Сумма первых N для инициализации
-            for (let i = p; i < data.length; i++) {
-                 // smoothed.push(smoothed[smoothed.length - 1] - smoothed[smoothed.length - 1] / p + data[i]); // Wilder's SMA
-                 // ИЛИ более распространенный вариант через EMA с alpha = 1/p
-                 smoothed.push( (smoothed[smoothed.length-1]*(p-1) + data[i]) / p );
-            }
-             // Дополняем начало для выравнивания длины (приблизительно)
-             const startPadding = Array(data.length - smoothed.length).fill(NaN);
-             return startPadding.concat(smoothed);
-        };
-
-
-        let smoothedTR = smooth(tr, wilderPeriod);
-        let smoothedPlusDM = smooth(plusDM, wilderPeriod);
-        let smoothedMinusDM = smooth(minusDM, wilderPeriod);
-
-
-        let plusDI = [];
-        let minusDI = [];
-        let dx = [];
-
-        for (let i = 0; i < smoothedTR.length; i++) {
-             if (smoothedTR[i] !== 0 && !isNaN(smoothedTR[i])) {
-                plusDI.push(100 * smoothedPlusDM[i] / smoothedTR[i]);
-                minusDI.push(100 * smoothedMinusDM[i] / smoothedTR[i]);
-                let sumDI = plusDI[plusDI.length-1] + minusDI[minusDI.length-1];
-                dx.push(sumDI === 0 ? 0 : 100 * Math.abs(plusDI[plusDI.length-1] - minusDI[minusDI.length-1]) / sumDI);
-            } else {
-                plusDI.push(NaN);
-                minusDI.push(NaN);
-                dx.push(NaN);
-            }
-        }
-        // Нам нужно заполнить NaN в начале dx, чтобы применить smooth
-        const dxPadding = Array(highs.length - dx.length).fill(NaN);
-        const paddedDX = dxPadding.concat(dx);
-        let adx = smooth(paddedDX.filter(v => !isNaN(v)), wilderPeriod); // Сглаживаем только валидные DX
-
-         // Дополняем NaN в начало ADX для выравнивания (приблизительно)
-         const adxPadding = Array(highs.length - adx.length).fill(NaN);
-         const finalADX = adxPadding.concat(adx);
-
-        return {
-            adx: finalADX.length > 0 ? finalADX[finalADX.length - 1] : NaN,
-            plusDI: plusDI.length > 0 ? plusDI[plusDI.length - 1] : NaN,
-            minusDI: minusDI.length > 0 ? minusDI[minusDI.length - 1] : NaN
-        };
-    }
-
-
-    // Поиск Ключевых Уровней Объема (Volume Profile)
-    function findKeyLevels(klines, percentThreshold) {
+     // Поиск Ключевых Уровней Объема (Volume Profile)
+     function findKeyLevels(klines, percentThreshold) { /* ... без изменений ... */
         const levels = [];
         const prices = klines.map(k => k.close);
         const highs = klines.map(k => k.high);
         const lows = klines.map(k => k.low);
         const volumes = klines.map(k => k.volume);
-
         const minPrice = Math.min(...lows);
         const maxPrice = Math.max(...highs);
         const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-        const priceStep = Math.max((maxPrice - minPrice) / 300, avgPrice * 0.0005); // Больше шагов, точнее
-
+        const priceStep = Math.max((maxPrice - minPrice) / 300, avgPrice * 0.0005);
         for (let level = minPrice; level <= maxPrice; level += priceStep) {
             const rangeMin = level - priceStep / 2;
             const rangeMax = level + priceStep / 2;
-            let volumeSum = 0;
-            let touchCount = 0;
-
+            let volumeSum = 0; let touchCount = 0;
             for (let i = 0; i < klines.length; i++) {
                 if (lows[i] <= rangeMax && highs[i] >= rangeMin) {
-                    volumeSum += volumes[i];
-                    touchCount++;
+                    volumeSum += volumes[i]; touchCount++;
                 }
             }
-
             if (touchCount > 0 && volumeSum > 0) {
                 levels.push({
-                    price: level,
-                    // Силу считаем как Объем * log(Касания + 1) - придает вес уровням, которые тестировались
-                    strength: volumeSum * Math.log1p(touchCount),
-                    touches: touchCount,
-                    rawVolume: volumeSum
+                    price: level, strength: volumeSum * Math.log1p(touchCount),
+                    touches: touchCount, rawVolume: volumeSum
                 });
             }
         }
-
         if (levels.length === 0) return [];
-
         const maxStrength = Math.max(...levels.map(l => l.strength));
         if (maxStrength > 0) {
-            levels.forEach(level => {
-                level.strength = level.strength / maxStrength; // Нормализуем 0-1
-            });
+            levels.forEach(level => { level.strength = level.strength / maxStrength; });
+        }
+        return levels.filter(level => level.strength >= percentThreshold)
+                     .sort((a, b) => b.strength - a.strength);
+     }
+
+    // Расчет ADX - **ИЗМЕНЕНО**: Возвращает последние DI+/DI-
+    function calcADX(highs, lows, closes, period) {
+        // ... (вся внутренняя логика расчета plusDM, minusDM, tr, smoothed TR/DM/MinusDM остается) ...
+        if (!highs || highs.length < period * 2) return { adx: NaN, plusDI: NaN, minusDI: NaN };
+
+        let plusDM = [0]; let minusDM = [0]; let tr = [highs[0] - lows[0]];
+        for (let i = 1; i < highs.length; i++) { /* ... расчет DM и TR ... */
+            let moveUp = highs[i] - highs[i-1]; let moveDown = lows[i-1] - lows[i];
+            plusDM.push((moveUp > moveDown && moveUp > 0) ? moveUp : 0);
+            minusDM.push((moveDown > moveUp && moveDown > 0) ? moveDown : 0);
+            let tr1 = highs[i] - lows[i]; let tr2 = Math.abs(highs[i] - closes[i-1]); let tr3 = Math.abs(lows[i] - closes[i-1]);
+            tr.push(Math.max(tr1, tr2, tr3));
         }
 
-        return levels
-            .filter(level => level.strength >= percentThreshold)
-            .sort((a, b) => b.strength - a.strength); // Сортируем по убыванию силы
+        const wilderPeriod = period;
+        const smooth = (data, p) => { /* ... функция сглаживания ... */
+            let smoothed = [data.slice(0, p).reduce((a, b) => a + b, 0)];
+            for (let i = p; i < data.length; i++) {
+                 smoothed.push( (smoothed[smoothed.length-1]*(p-1) + data[i]) / p );
+            }
+             const startPadding = Array(data.length - smoothed.length).fill(NaN);
+             return startPadding.concat(smoothed);
+        };
+
+        let smoothedTR = smooth(tr, wilderPeriod);
+        let smoothedPlusDM = smooth(plusDM, wilderPeriod);
+        let smoothedMinusDM = smooth(minusDM, wilderPeriod);
+
+        let plusDI_arr = []; let minusDI_arr = []; let dx = [];
+        for (let i = 0; i < smoothedTR.length; i++) { /* ... расчет DI и DX ... */
+             if (smoothedTR[i] !== 0 && !isNaN(smoothedTR[i])) {
+                let pdi = 100 * smoothedPlusDM[i] / smoothedTR[i];
+                let mdi = 100 * smoothedMinusDM[i] / smoothedTR[i];
+                plusDI_arr.push(pdi); minusDI_arr.push(mdi);
+                let sumDI = pdi + mdi;
+                dx.push(sumDI === 0 ? 0 : 100 * Math.abs(pdi - mdi) / sumDI);
+            } else {
+                plusDI_arr.push(NaN); minusDI_arr.push(NaN); dx.push(NaN);
+            }
+        }
+        const dxPadding = Array(highs.length - dx.length).fill(NaN);
+        const paddedDX = dxPadding.concat(dx);
+        let adx = smooth(paddedDX.filter(v => !isNaN(v)), wilderPeriod);
+        const adxPadding = Array(highs.length - adx.length).fill(NaN);
+        const finalADX = adxPadding.concat(adx);
+
+        // Возвращаем последние валидные значения
+        const findLastValid = (arr) => arr.slice().reverse().find(v => !isNaN(v)) ?? NaN;
+
+        return {
+            adx: findLastValid(finalADX),
+            plusDI: findLastValid(plusDI_arr), // Возвращаем последнее значение DI+
+            minusDI: findLastValid(minusDI_arr) // Возвращаем последнее значение DI-
+        };
     }
 
     // --- ОСНОВНАЯ ЛОГИКА РАСЧЕТА ---
@@ -308,20 +264,14 @@
         if (window.myChart) window.myChart.destroy();
 
         try {
-            // 1. Загрузка данных 1h и 4h
+            // 1. Загрузка данных
             const klines1h = await fetchData(SYMBOL, MAIN_INTERVAL, SETTINGS.historicalDays);
-            // Для 4h берем больше дней, чтобы было достаточно свечей для анализа
             const klines4h = await fetchData(SYMBOL, CONFIRM_INTERVAL, SETTINGS.historicalDays * 4);
-
-            // Проверки на достаточность данных
              if (klines1h.length < Math.max(SETTINGS.bbPeriod, SETTINGS.priceSmoothingPeriod, SETTINGS.atrPeriod, SETTINGS.adxPeriod*2) + 1) {
-                throw new Error(`Недостаточно данных 1h (${klines1h.length}) для индикаторов.`);
-             }
-             if (klines4h.length < 20) { // Минимум для грубого Volume Profile
-                 console.warn("Мало данных 4h для надежного анализа уровней.");
+                 throw new Error(`Недостаточно данных 1h (${klines1h.length}) для индикаторов.`);
              }
 
-            // 2. Извлечение цен и расчет индикаторов для 1h
+            // 2. Расчет индикаторов 1h
             const closes1h = klines1h.map(k => k.close);
             const highs1h = klines1h.map(k => k.high);
             const lows1h = klines1h.map(k => k.low);
@@ -330,6 +280,17 @@
             const currentPrice = closes1h[closes1h.length - 1];
             const smoothedPrices = calcEMA(closes1h, SETTINGS.priceSmoothingPeriod);
             const centerPrice = smoothedPrices[smoothedPrices.length - 1];
+             // Расчет наклона EMA
+             let emaSlope = "Flat";
+             if (smoothedPrices.length >= SETTINGS.emaSlopePeriod) {
+                 const currentEma = centerPrice;
+                 const previousEma = smoothedPrices[smoothedPrices.length - SETTINGS.emaSlopePeriod];
+                 if (!isNaN(currentEma) && !isNaN(previousEma)) {
+                     if (currentEma > previousEma * 1.0005) emaSlope = "Up"; // Небольшой порог для определения роста
+                     else if (currentEma < previousEma * 0.9995) emaSlope = "Down"; // Небольшой порог для падения
+                 }
+             }
+
 
             const { atr, averageAtr } = calcATR(highs1h, lows1h, closes1h, SETTINGS.atrPeriod);
              if (isNaN(atr)) throw new Error("Не удалось рассчитать ATR.");
@@ -339,125 +300,143 @@
             const currentLowerBB = lowerBand[lowerBand.length - 1];
              if (isNaN(currentUpperBB) || isNaN(currentLowerBB)) throw new Error("Не удалось рассчитать Bollinger Bands.");
 
-            const { adx } = calcADX(highs1h, lows1h, closes1h, SETTINGS.adxPeriod);
-             if (isNaN(adx)) console.warn("Не удалось рассчитать ADX."); // Не критично, если не рассчитался
+            // **ИЗМЕНЕНО**: Получаем DI+/DI- вместе с ADX
+            const { adx, plusDI, minusDI } = calcADX(highs1h, lows1h, closes1h, SETTINGS.adxPeriod);
+             const adxAvailable = !isNaN(adx);
+             const diAvailable = !isNaN(plusDI) && !isNaN(minusDI);
 
-            // 3. Поиск ключевых уровней 1h и 4h
+            // 3. Поиск уровней 1h и 4h
             const keyLevels1h = findKeyLevels(klines1h, SETTINGS.volumeThreshold);
-            const keyLevels4h = findKeyLevels(klines4h, SETTINGS.volumeThreshold); // Можно использовать тот же порог или другой
+            const keyLevels4h = findKeyLevels(klines4h, SETTINGS.volumeThreshold);
 
-            // --- ЛОГИКА ОПРЕДЕЛЕНИЯ ДИАПАЗОНА ---
-            let confidence = { level: "Средняя", reasons: [] }; // Оценка уверенности
+            // --- ЛОГИКА ОПРЕДЕЛЕНИЯ ДИАПАЗОНА (без изменений) ---
+            let confidence = { level: "Средняя", reasons: [] };
             let finalLower, finalUpper;
-
-            // Кандидаты по Bollinger Bands
-            let lowerCandidate = currentLowerBB;
-            let upperCandidate = currentUpperBB;
-
-            // Функция для поиска ближайшего сильного уровня с MTF подтверждением
-            const findBestLevel = (targetPrice, levels1h, levels4h, isSupport) => {
+            let lowerCandidate = currentLowerBB; let upperCandidate = currentUpperBB;
+            const findBestLevel = (targetPrice, levels1h, levels4h, isSupport) => { /* ... без изменений ... */
                 const proximity = targetPrice * SETTINGS.levelProximityFactor;
                 const mtfProximity = targetPrice * SETTINGS.mtfConfirmProximity;
-
                 const nearbyLevels1h = levels1h.filter(l =>
                     Math.abs(l.price - targetPrice) < proximity &&
                     (isSupport ? l.price <= targetPrice : l.price >= targetPrice)
                 );
-
-                if (nearbyLevels1h.length === 0) return null; // Нет близких 1h уровней
-
-                // Ищем подтверждение 4h
+                if (nearbyLevels1h.length === 0) return null;
                 nearbyLevels1h.forEach(l1h => {
                     l1h.mtfConfirmed = levels4h.some(l4h => Math.abs(l1h.price - l4h.price) < mtfProximity);
-                    l1h.distance = Math.abs(l1h.price - targetPrice); // Расстояние до кандидата (BB)
+                    l1h.distance = Math.abs(l1h.price - targetPrice);
                 });
-
-                // Сортируем: сначала с MTF подтверждением, потом по силе, потом по близости
                  nearbyLevels1h.sort((a, b) => {
-                     if (a.mtfConfirmed !== b.mtfConfirmed) return b.mtfConfirmed - a.mtfConfirmed; // true (1) > false (0)
-                     if (Math.abs(a.strength - b.strength) > 0.1) return b.strength - a.strength; // Сначала более сильные
-                     return a.distance - b.distance; // Потом более близкие к BB
+                     if (a.mtfConfirmed !== b.mtfConfirmed) return b.mtfConfirmed - a.mtfConfirmed;
+                     if (Math.abs(a.strength - b.strength) > 0.1) return b.strength - a.strength;
+                     return a.distance - b.distance;
                  });
-
-                return nearbyLevels1h[0]; // Возвращаем лучший найденный уровень
+                return nearbyLevels1h[0];
             };
 
-            // Ищем лучшую поддержку
             const bestSupportLevel = findBestLevel(lowerCandidate, keyLevels1h, keyLevels4h, true);
-            if (bestSupportLevel) {
+             if (bestSupportLevel) { /* ... логика присвоения finalLower и confidence ... */
                 finalLower = bestSupportLevel.price;
                 confidence.reasons.push(`Поддержка ${finalLower.toFixed(2)} найдена у BB (${lowerCandidate.toFixed(2)})${bestSupportLevel.mtfConfirmed ? ' и подтверждена на 4h.' : '.'}`);
                 if(bestSupportLevel.mtfConfirmed) confidence.level = "Высокая";
-            } else {
-                finalLower = centerPrice - atr * SETTINGS.fallbackAtrMultiple; // Fallback
-                confidence.reasons.push(`Сильная поддержка у BB не найдена, используется fallback ATR: ${finalLower.toFixed(2)}.`);
-                confidence.level = "Низкая";
-            }
-            // Корректировка: поддержка не может быть выше центра или BB
-            finalLower = Math.min(finalLower, centerPrice - atr*0.1, lowerCandidate);
+             } else { finalLower = centerPrice - atr * SETTINGS.fallbackAtrMultiple; confidence.reasons.push(`Сильная поддержка у BB не найдена, fallback ATR: ${finalLower.toFixed(2)}.`); confidence.level = "Низкая"; }
+             finalLower = Math.min(finalLower, centerPrice - atr*0.1, lowerCandidate);
 
-
-            // Ищем лучшее сопротивление
-             const bestResistanceLevel = findBestLevel(upperCandidate, keyLevels1h, keyLevels4h, false);
-             if (bestResistanceLevel) {
+            const bestResistanceLevel = findBestLevel(upperCandidate, keyLevels1h, keyLevels4h, false);
+             if (bestResistanceLevel) { /* ... логика присвоения finalUpper и confidence ... */
                  finalUpper = bestResistanceLevel.price;
                  confidence.reasons.push(`Сопротивление ${finalUpper.toFixed(2)} найдено у BB (${upperCandidate.toFixed(2)})${bestResistanceLevel.mtfConfirmed ? ' и подтверждено на 4h.' : '.'}`);
                   if(bestResistanceLevel.mtfConfirmed && confidence.level !== "Низкая") confidence.level = "Высокая";
-                  else if (confidence.level === "Низкая") confidence.level = "Низкая"; // Не повышаем, если поддержка слабая
-                  else confidence.level = "Средняя";
-             } else {
-                 finalUpper = centerPrice + atr * SETTINGS.fallbackAtrMultiple; // Fallback
-                 confidence.reasons.push(`Сильное сопротивление у BB не найдено, используется fallback ATR: ${finalUpper.toFixed(2)}.`);
-                 confidence.level = "Низкая"; // Снижаем уверенность
-             }
-             // Корректировка: сопротивление не может быть ниже центра или BB
+                  else if (confidence.level === "Низкая") confidence.level = "Низкая"; else confidence.level = "Средняя";
+             } else { finalUpper = centerPrice + atr * SETTINGS.fallbackAtrMultiple; confidence.reasons.push(`Сильное сопротивление у BB не найдено, fallback ATR: ${finalUpper.toFixed(2)}.`); confidence.level = "Низкая"; }
              finalUpper = Math.max(finalUpper, centerPrice + atr*0.1, upperCandidate);
 
-
-            // Проверка минимальной ширины и инверсии
             const minWidth = atr * SETTINGS.minRangeAtrMultiple;
-            if (finalUpper - finalLower < minWidth) {
-                const midPoint = (finalLower + finalUpper) / 2;
-                finalLower = midPoint - minWidth / 2;
-                finalUpper = midPoint + minWidth / 2;
+             if (finalUpper - finalLower < minWidth) { /* ... коррекция ширины ... */
+                const midPoint = (finalLower + finalUpper) / 2; finalLower = midPoint - minWidth / 2; finalUpper = midPoint + minWidth / 2;
                  confidence.reasons.push(`Диапазон скорректирован до мин. ширины (${minWidth.toFixed(2)} USDT).`);
-                 confidence.level = confidence.level === "Высокая" ? "Средняя" : "Низкая"; // Снижаем уверенность при коррекции
-            }
-             if (finalLower >= finalUpper) {
-                  console.error("Критическая ошибка: Lower >= Upper. Расчет не удался.");
-                  throw new Error("Ошибка расчета диапазона (Lower >= Upper).");
+                 confidence.level = confidence.level === "Высокая" ? "Средняя" : "Низкая";
              }
+             if (finalLower >= finalUpper) { throw new Error("Ошибка расчета диапазона (Lower >= Upper)."); }
+
+
+            // --- **НОВОЕ**: ОПРЕДЕЛЕНИЕ РЕКОМЕНДАЦИИ ПО НАПРАВЛЕНИЮ ---
+            let directionRecommendation = "Neutral"; // По умолчанию
+            let directionReason = "";
+            let directionClass = "recommend-neutral";
+
+            if (confidence.level === "Низкая") {
+                directionRecommendation = "Avoid (Низкая Уверенность)";
+                directionReason = "Низкая уверенность в расчитанном диапазоне.";
+                directionClass = "recommend-avoid";
+            } else if (adxAvailable && adx >= SETTINGS.adxTrendThreshold) {
+                // Сильный тренд
+                 if (diAvailable && plusDI > minusDI * SETTINGS.diDifferenceThreshold) {
+                     directionRecommendation = "Avoid / Long Bias (Сильный Тренд)";
+                     directionReason = `Сильный восходящий тренд (ADX=${adx.toFixed(1)}, DI+ > DI-). Нейтральный грид очень рискован.`;
+                     directionClass = "recommend-long"; // Зеленый для Long Bias, но с Avoid
+                 } else if (diAvailable && minusDI > plusDI * SETTINGS.diDifferenceThreshold) {
+                     directionRecommendation = "Avoid / Short Bias (Сильный Тренд)";
+                     directionReason = `Сильный нисходящий тренд (ADX=${adx.toFixed(1)}, DI- > DI+). Нейтральный грид очень рискован.`;
+                     directionClass = "recommend-short"; // Красный для Short Bias, но с Avoid
+                 } else {
+                     directionRecommendation = "Avoid (Сильный Тренд)";
+                     directionReason = `Сильный тренд (ADX=${adx.toFixed(1)}), но направление неясно (DI+/DI- близки). Высокий риск.`;
+                     directionClass = "recommend-avoid";
+                 }
+            } else {
+                // Слабый тренд или флэт (ADX < порога) - лучше для нейтрального грида
+                 directionRecommendation = "Neutral";
+                 directionClass = "recommend-neutral";
+                 // Добавляем небольшой уклон на основе наклона EMA
+                 if (emaSlope === "Up") {
+                     directionRecommendation = "Neutral (Склонность к Long)";
+                     directionReason = `Рынок во флэте/слабом тренде (ADX=${adxAvailable ? adx.toFixed(1) : 'N/A'}), но краткосрочная EMA (${SETTINGS.priceSmoothingPeriod}) растет.`;
+                 } else if (emaSlope === "Down") {
+                     directionRecommendation = "Neutral (Склонность к Short)";
+                     directionReason = `Рынок во флэте/слабом тренде (ADX=${adxAvailable ? adx.toFixed(1) : 'N/A'}), но краткосрочная EMA (${SETTINGS.priceSmoothingPeriod}) падает.`;
+                 } else {
+                     directionReason = `Рынок во флэте/слабом тренде (ADX=${adxAvailable ? adx.toFixed(1) : 'N/A'}), EMA (${SETTINGS.priceSmoothingPeriod}) без явного наклона.`;
+                 }
+            }
+
 
             // --- ФОРМИРОВАНИЕ РЕЗУЛЬТАТА ---
-            let resultHTML = `<b>--- Рекомендации для Нейтрального Грид-Бота ---</b>\n`;
-            resultHTML += `Анализ для ${SYMBOL} (${MAIN_INTERVAL} + ${CONFIRM_INTERVAL})\n\n`;
-            resultHTML += `<b>Центр (EMA ${SETTINGS.priceSmoothingPeriod}):</b> ${centerPrice.toFixed(2)} USDT\n`;
-            resultHTML += `<b>ATR (${SETTINGS.atrPeriod}):</b> ${atr.toFixed(2)} USDT (${(atr/centerPrice*100).toFixed(1)}%) ${!isNaN(averageAtr) && atr > averageAtr*1.2 ? '(Повышенная волатильность!)' : !isNaN(averageAtr) && atr < averageAtr*0.8 ? '(Пониженная волатильность)' : ''}\n`;
-            resultHTML += `<b>Bollinger Bands (${SETTINGS.bbPeriod},${SETTINGS.bbStdDev}):</b> ${currentLowerBB.toFixed(2)} - ${currentUpperBB.toFixed(2)}\n`;
-            resultHTML += `<b>ADX (${SETTINGS.adxPeriod}):</b> ${!isNaN(adx) ? adx.toFixed(1) : 'N/A'}\n\n`;
+            let resultHTML = `<b>--- Рекомендации для Грид-Бота (${SYMBOL}) ---</b>\n`;
+            resultHTML += `Анализ интервалов: ${MAIN_INTERVAL} (основной), ${CONFIRM_INTERVAL} (подтверждение)\n`;
+            const now = luxon.DateTime.now().setZone("Asia/Aqtobe").toFormat("dd.MM.yyyy HH:mm:ss ZZZZ");
+            resultHTML += `Время расчета: ${now}\n\n`;
 
-             resultHTML += `<b>Рекомендуемый диапазон: ${finalLower.toFixed(2)} - ${finalUpper.toFixed(2)} USDT</b>\n`;
-             resultHTML += `<b>Ширина:</b> ${(finalUpper - finalLower).toFixed(2)} USDT (${((finalUpper - finalLower)/centerPrice*100).toFixed(1)}%)\n\n`;
+            resultHTML += `<b>Индикаторы ${MAIN_INTERVAL}:</b>\n`;
+            resultHTML += `  Центр (EMA ${SETTINGS.priceSmoothingPeriod}): ${centerPrice.toFixed(2)} USDT (Наклон за ${SETTINGS.emaSlopePeriod} пер.: ${emaSlope})\n`;
+            resultHTML += `  ATR (${SETTINGS.atrPeriod}): ${atr.toFixed(2)} (${(atr/centerPrice*100).toFixed(1)}%) ${!isNaN(averageAtr) && atr > averageAtr*1.2 ? '(Высокая волатильность!)' : !isNaN(averageAtr) && atr < averageAtr*0.8 ? '(Низкая волатильность)' : ''}\n`;
+            resultHTML += `  Bollinger (${SETTINGS.bbPeriod},${SETTINGS.bbStdDev}): ${currentLowerBB.toFixed(2)} - ${currentUpperBB.toFixed(2)}\n`;
+            resultHTML += `  ADX (${SETTINGS.adxPeriod}): ${adxAvailable ? adx.toFixed(1) : 'N/A'}  (DI+: ${diAvailable ? plusDI.toFixed(1) : 'N/A'}, DI-: ${diAvailable ? minusDI.toFixed(1) : 'N/A'})\n\n`;
 
-             let confidenceClass = 'confidence-medium';
-             if (confidence.level === "Высокая") confidenceClass = 'confidence-high';
-             if (confidence.level === "Низкая") confidenceClass = 'confidence-low';
-             resultHTML += `<b>Уверенность: <span class="${confidenceClass}">${confidence.level}</span></b>\n`;
-             resultHTML += `   <i>Причины:</i>\n`;
-             confidence.reasons.forEach(r => resultHTML += `   - ${r}\n`);
+            resultHTML += `<b>--- Расчетный Диапазон ---</b>\n`;
+            resultHTML += `  Поддержка (Нижняя граница): <b>${finalLower.toFixed(2)}</b> USDT\n`;
+            resultHTML += `  Сопротивление (Верхняя граница): <b>${finalUpper.toFixed(2)}</b> USDT\n`;
+            resultHTML += `  Ширина: ${(finalUpper - finalLower).toFixed(2)} USDT (${((finalUpper - finalLower)/centerPrice*100).toFixed(1)}%)\n`;
 
-            // Предупреждение о тренде
-            if (!isNaN(adx) && adx >= SETTINGS.adxTrendThreshold) {
-                resultHTML += `\n<span class="warning">ВНИМАНИЕ: ADX (${adx.toFixed(1)}) >= ${SETTINGS.adxTrendThreshold}, указывает на ТРЕНД! Нейтральная грид-стратегия в тренде ОЧЕНЬ РИСКОВАННА, особенно с плечом!</span>\n`;
-            } else if (!isNaN(adx)) {
-                 resultHTML += `\n<i>ADX (${adx.toFixed(1)}) < ${SETTINGS.adxTrendThreshold}, рынок скорее во флэте/слабом тренде (лучше для грида).</i>\n`;
+            let confidenceClass = 'confidence-medium';
+            if (confidence.level === "Высокая") confidenceClass = 'confidence-high';
+            if (confidence.level === "Низкая") confidenceClass = 'confidence-low';
+            resultHTML += `  Уверенность в диапазоне: <span class="${confidenceClass}">${confidence.level}</span>\n`;
+            // resultHTML += `   <i>Обоснование:</i> ${confidence.reasons.join(' ')}\n\n`; // Можно раскомментировать для деталей
+
+            // **НОВОЕ**: Вывод рекомендации по направлению
+            resultHTML += `<b>--- Рекомендация по Направлению ---</b>\n`;
+            resultHTML += `  <span class="${directionClass}">${directionRecommendation}</span>\n`;
+            resultHTML += `  <i>Обоснование: ${directionReason}</i>\n\n`;
+
+
+            // Предупреждение о тренде (если еще не было в рекомендации Avoid)
+            if (adxAvailable && adx >= SETTINGS.adxTrendThreshold && !directionRecommendation.includes("Avoid")) {
+                 resultHTML += `<span class="warning">ВНИМАНИЕ: ADX (${adx.toFixed(1)}) >= ${SETTINGS.adxTrendThreshold} указывает на СИЛЬНЫЙ ТРЕНД! Выбранное направление (${directionRecommendation}) в таких условиях РИСКОВАННО для грид-бота!</span>\n\n`;
             }
 
-             resultHTML += `\n<b>ВАЖНО:</b> Эти рекомендации основаны на исторических данных и индикаторах. Они НЕ гарантируют прибыль и НЕ учитывают цену ликвидации для вашего плеча (10x)! Всегда проводите собственный анализ, управляйте рисками и проверяйте расстояние до ликвидации перед запуском бота!`;
+            resultHTML += `<b>ВАЖНО:</b> Используйте эти автоматические рекомендации как ОДИН ИЗ ИНСТРУМЕНТОВ анализа. ВСЕГДА проверяйте график, учитывайте новости, настроение рынка и КРИТИЧЕСКИ ВАЖНО - рассчитывайте и контролируйте вашу ЦЕНУ ЛИКВИДАЦИИ при торговле с плечом!`;
 
             document.getElementById("result").innerHTML = resultHTML;
-
-            // Передаем доп. данные для графика
             drawChart(klines1h, finalLower, finalUpper, centerPrice, currentLowerBB, currentUpperBB);
 
         } catch (error) {
@@ -466,83 +445,27 @@
         }
     }
 
-    // --- ПОСТРОЕНИЕ ГРАФИКА ---
-    function drawChart(klines, lowerBound, upperBound, centerPrice, lowerBB, upperBB) {
+    // --- ПОСТРОЕНИЕ ГРАФИКА --- (без изменений)
+    function drawChart(klines, lowerBound, upperBound, centerPrice, lowerBB, upperBB) { /* ... без изменений ... */
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (window.myChart) window.myChart.destroy();
-
-      const timestamps = klines.map(k => k.timestamp);
-      const prices = klines.map(k => k.close);
+      const timestamps = klines.map(k => k.timestamp); const prices = klines.map(k => k.close);
       const labels = timestamps.map(ts => luxon.DateTime.fromMillis(ts));
-
       const datasets = [
-            {
-              label: "Цена ETH (Close)",
-              data: prices,
-              borderColor: "rgba(0, 123, 255, 1)", // Синий
-              borderWidth: 1.5, fill: false, pointRadius: 0, tension: 0.1
-            },
-            {
-              label: `Реком. Нижн. (${lowerBound.toFixed(2)})`,
-              data: Array(prices.length).fill(lowerBound),
-              borderColor: "rgba(40, 167, 69, 1)", // Зеленый
-              borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false
-            },
-            {
-              label: `Реком. Верхн. (${upperBound.toFixed(2)})`,
-              data: Array(prices.length).fill(upperBound),
-              borderColor: "rgba(220, 53, 69, 1)", // Красный
-              borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false
-            },
-             {
-              label: `Центр EMA (${centerPrice.toFixed(2)})`,
-              data: Array(prices.length).fill(centerPrice),
-              borderColor: "rgba(255, 193, 7, 0.8)", // Желтый
-              borderWidth: 1, pointRadius: 0, fill: false, borderDash: [2, 2]
-            }
-          ];
-
-      // Добавляем BB на график, если они рассчитаны
+            { label: "Цена ETH (Close)", data: prices, borderColor: "rgba(0, 123, 255, 1)", borderWidth: 1.5, fill: false, pointRadius: 0, tension: 0.1 },
+            { label: `Реком. Нижн. (${lowerBound.toFixed(2)})`, data: Array(prices.length).fill(lowerBound), borderColor: "rgba(40, 167, 69, 1)", borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false },
+            { label: `Реком. Верхн. (${upperBound.toFixed(2)})`, data: Array(prices.length).fill(upperBound), borderColor: "rgba(220, 53, 69, 1)", borderWidth: 2, borderDash: [5, 5], pointRadius: 0, fill: false },
+             { label: `Центр EMA (${centerPrice.toFixed(2)})`, data: Array(prices.length).fill(centerPrice), borderColor: "rgba(255, 193, 7, 0.8)", borderWidth: 1, pointRadius: 0, fill: false, borderDash: [2, 2] } ];
       if (!isNaN(lowerBB) && !isNaN(upperBB)) {
-          datasets.push({
-              label: 'Bollinger Low',
-              data: Array(prices.length).fill(lowerBB),
-              borderColor: 'rgba(108, 117, 125, 0.5)', // Серый пунктир
-              borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
-          });
-          datasets.push({
-              label: 'Bollinger High',
-              data: Array(prices.length).fill(upperBB),
-              borderColor: 'rgba(108, 117, 125, 0.5)', // Серый пунктир
-              borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
-          });
-      }
-
-      window.myChart = new Chart(ctx, {
-        type: "line",
-        data: { labels: labels, datasets: datasets },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          scales: {
-            x: { type: "time", adapters: { date: { locale: 'ru-RU' } },
-                 time: { unit: 'day', tooltipFormat: 'DD T', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } },
-                 ticks: { source: 'auto', maxRotation: 0, autoSkip: true }
-            },
-            y: { ticks: { callback: (value) => value.toFixed(2) }, grace: '5%' }
-          },
-           plugins: {
-                tooltip: { mode: 'index', intersect: false, position: 'nearest' },
-                legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } }
-            },
-            hover: { mode: 'nearest', intersect: true },
-            animation: { duration: 200 } // Плавная анимация
-        }
-      });
+          datasets.push({ label: 'Bollinger Low', data: Array(prices.length).fill(lowerBB), borderColor: 'rgba(108, 117, 125, 0.5)', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false });
+          datasets.push({ label: 'Bollinger High', data: Array(prices.length).fill(upperBB), borderColor: 'rgba(108, 117, 125, 0.5)', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false }); }
+      window.myChart = new Chart(ctx, { type: "line", data: { labels: labels, datasets: datasets },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { x: { type: "time", adapters: { date: { locale: 'ru-RU' } }, time: { unit: 'day', tooltipFormat: 'DD T', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } }, ticks: { source: 'auto', maxRotation: 0, autoSkip: true } },
+            y: { ticks: { callback: (value) => value.toFixed(2) }, grace: '5%' } },
+           plugins: { tooltip: { mode: 'index', intersect: false, position: 'nearest' }, legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+            hover: { mode: 'nearest', intersect: true }, animation: { duration: 200 } } });
     }
-
-     // Запускаем расчет при загрузке (опционально)
-     // window.onload = calculateRange;
-
   </script>
 </body>
 </html>
